@@ -1,0 +1,253 @@
+---
+title: "Cl_liearmodelling"
+author: "Camille Zimmer"
+date: "2023-07-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Fresh clean up
+rm(list = ls())
+
+# Loading libraries
+library(readxl)
+library(MASS)
+library(modelr)
+# library(esquisse)
+library(forcats)
+library(patchwork)
+library(tidyverse)
+library(broom)
+library(ggpubr)
+library(interactions)
+library(RColorBrewer)
+
+```
+
+```{r data import}
+# Loading the data into a dataframe 
+cl_raw <- read_excel("data/Cl_data_master_2.xlsx", skip = 15)
+str(cl_raw)
+
+#changing some columns into factors
+cols <- c("paper_ID", "organism_name", "strain_type", "strain_name", "growth_phase", 
+          "water_type", "enum_method",  
+          "stat_info", "compound_name")
+
+cl_raw[cols] <- lapply(cl_raw[cols], factor)
+
+#adding a LRV variable and removing survival of 0%
+#The reason why we exclude survival of 100% is because when a non-detect is reached in an experiment, 
+#we can't know the actual dose value that would have given the non-detect in the first place, it's an upper bound
+#the reasoning behind excluding survival of 0% is that our model will use the data points where a certain survival is acheived with a known dose
+#and the model will be able to predict what dose is needed to acheive 0% survival.
+
+cl_raw <- cl_raw %>%
+  filter(!(survival == 0)) %>% 
+  mutate(LRV = -log10(survival))
+
+# Dataframe for yeast only
+yeast <- filter(cl_raw, organism_name == 'yeast')
+
+```
+
+```{r first look at yeast data, fig.width=8, fig.height=5}
+
+
+p = ggplot(yeast, aes(x = dose, y = LRV, colour = growth_phase))+
+  geom_smooth(method = "lm", se = TRUE, size = 0.5)+
+  geom_point()+
+  facet_wrap(~paper_ID, ncol = 2, scales = "free")+
+  stat_regline_equation()
+
+print(p)
+
+# buschini_2004 is all at pH 7.4
+# hays_1967 is all at pH 8.5
+
+# Look at top 95% of dose data, so that we try to minimize the "Tail"
+yeast95 <- filter(yeast, dose <= ceiling(quantile(yeast$dose, probs = 0.95)))
+p = ggplot(yeast95, aes(x = dose, y = LRV, colour = growth_phase))+
+  geom_smooth(method = "lm", se = TRUE, size = 0.5)+
+  geom_point()+
+  facet_wrap(~paper_ID, ncol = 2, scales = "free")+
+  stat_regline_equation()
+
+
+print(p)
+
+```
+
+```{r look at buschini_2004}
+
+yeast95 = filter(yeast, paper_ID == "buschini_2004")
+yeast95 <- filter(yeast95, dose <= ceiling(quantile(yeast$dose, probs = 0.95)))
+
+#Initalize the outer df
+outer_df_buschini = data.frame()
+gr = levels(yeast95$growth_phase)
+
+#Initalize the growth_phase argument
+# growth_phase = "stationary"
+growth_phase = "log"
+
+#Subset data according to growth phase (stationary vs log)
+# tempdata = yeast95 %>% subset(growth_phase == growth_phase)
+
+for(i in seq_along(gr)){
+  tempdata = yeast95 %>% subset(growth_phase ==gr[i])
+  gr[i]
+tempmodel = lm(data = tempdata, 
+               formula = dose~LRV)
+#Do pred
+  
+predfluence = predict(tempmodel, data.frame(LRV = 2), interval = "confidence", se.fit=TRUE)
+  
+  #Get pred statistics
+  pred_val = predfluence$fit[[1]]
+  pred_l95 = predfluence$fit[[2]]
+  pred_u95 = predfluence$fit[[3]]
+  pred_stderr = predfluence$se.fit
+  pred_df = predfluence$df
+  pred_n = pred_df+2
+  pred_resid = predfluence$residual.scale
+  growth_phase = gr[i]
+  
+#Organize into output
+output = c(growth_phase, pred_val, pred_l95, pred_u95, pred_stderr, pred_df, pred_n, pred_resid)
+output
+  
+#Put into outer df
+outer_df_buschini = rbind(outer_df_buschini, output)
+
+}
+
+colnames(outer_df_buschini) = c('growth_phase', 'pred_val', 'pred_l95', 'pred_u95', 'pred_stderr', 'pred_df', 'pred_n', 'pred_resid')
+
+write.csv(outer_df_buschini, "outer_df_buschini.csv")
+
+```
+
+
+```{r look at hays_1967}
+
+yeast95 = filter(yeast, paper_ID == "hays_1967")
+yeast95$pH = as.factor(yeast95$pH)
+
+##### Do model #####
+
+  tempmodel = lm(data = yeast95, 
+               formula = LRV~dose*pH)
+  #Get model statistics
+  tempsummary = summary(tempmodel)
+  temptidy = tidy(tempmodel)
+  tempglance = glance(tempmodel)
+  print(tempsummary)
+  
+##### Do pred #####
+outer_df_hays = data.frame()
+gr = levels(yeast95$pH)
+
+for(i in seq_along(gr)){
+  tempdata = yeast95 %>% subset(pH ==gr[i])
+tempmodel = lm(data = tempdata, 
+               formula = dose~LRV)
+  
+predfluence = predict(tempmodel, data.frame(LRV = 2), interval = "confidence", se.fit=TRUE)
+  
+  #Get pred statistics
+  pred_val = predfluence$fit[[1]]
+  pred_l95 = predfluence$fit[[2]]
+  pred_u95 = predfluence$fit[[3]]
+  pred_stderr = predfluence$se.fit
+  pred_df = predfluence$df
+  pred_n = pred_df+2
+  pred_resid = predfluence$residual.scale
+  pH = gr[i]
+  
+#Organize into output
+output = c(pH, pred_val, pred_l95, pred_u95, pred_stderr, pred_df, pred_n, pred_resid)
+
+#Put into outer df
+outer_df_hays = rbind(outer_df_hays, output)
+
+}
+
+colnames(outer_df_hays) = c('pH', 'pred_val', 'pred_l95', 'pred_u95', 'pred_stderr', 'pred_df', 'pred_n', 'pred_resid')
+write.csv(outer_df_hays, "outer_df_hays.csv")
+
+
+#####  Make a figure #####
+
+p = ggplot(yeast95, aes(x = dose, y = LRV, colour = pH))+
+  geom_smooth(method = "lm", se = TRUE, size = 0.5)+
+  geom_point()+
+  stat_regline_equation()
+print(p)
+
+```
+
+
+```{r look at giardia}
+# Get Giardia data
+giardia <- filter(cl_raw, organism_name == 'giardia')
+# Make pH a factor
+giardia$pH = as.factor(giardia$pH)
+str(giardia)
+
+#####  Make a figure #####
+p = ggplot(giardia, aes(x = dose, y = LRV, colour = pH))+
+  geom_smooth(method = "lm", se = TRUE, size = 0.5)+
+  geom_point()+
+  stat_regline_equation()
+print(p)
+
+##### Do model #####
+  tempmodel = lm(data = giardia, 
+               formula = LRV~dose*pH)
+  #Get model statistics
+  tempsummary = summary(tempmodel)
+  temptidy = tidy(tempmodel)
+  tempglance = glance(tempmodel)
+  print(tempsummary)
+  # Result: it's a nice model
+  # They're all distinguishable from a horiz line, with nice R2 values
+  # All the pHs are distinct from pH 6.6 and therefore presumably from each other as well
+  
+
+  
+##### Do pred #####
+outer_df_giardia_Cl = data.frame()
+gr = levels(giardia$pH)
+
+for(i in seq_along(gr)){
+  tempdata = giardia %>% subset(pH ==gr[i])
+tempmodel = lm(data = tempdata, 
+               formula = dose~LRV)
+  
+predfluence = predict(tempmodel, data.frame(LRV = 2), interval = "confidence", se.fit=TRUE)
+  
+  #Get pred statistics
+  pred_val = predfluence$fit[[1]]
+  pred_l95 = predfluence$fit[[2]]
+  pred_u95 = predfluence$fit[[3]]
+  pred_stderr = predfluence$se.fit
+  pred_df = predfluence$df
+  pred_n = pred_df+2
+  pred_resid = predfluence$residual.scale
+  pH = gr[i]
+  
+#Organize into output
+output = c(pH, pred_val, pred_l95, pred_u95, pred_stderr, pred_df, pred_n, pred_resid)
+
+#Put into outer df
+outer_df_giardia_Cl = rbind(outer_df_giardia_Cl, output)
+
+}
+
+colnames(outer_df_giardia_Cl) = c('pH', 'pred_val', 'pred_l95', 'pred_u95', 'pred_stderr', 'pred_df', 'pred_n', 'pred_resid')
+write.csv(outer_df_giardia_Cl, "outer_df_giardia_Cl.csv")
+
+```
