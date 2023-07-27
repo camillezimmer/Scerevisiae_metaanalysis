@@ -1,0 +1,160 @@
+---
+title: "meta_analysis_Cl"
+author: "Camille Zimmer"
+date: "2023-07-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Fresh clean up
+rm(list = ls())
+
+# Loading libraries
+library(readxl)
+library(MASS)
+library(modelr)
+# library(esquisse)
+library(forcats)
+library(patchwork)
+library(tidyverse)
+library(broom)
+library(ggpubr)
+library(interactions)
+library(RColorBrewer)
+# library(metafor)
+library(meta)
+# library(forestplot)
+library(utf8)
+
+```
+
+```{r 1st pass statistical analysis to compare with giardia}
+# Load in data
+rm(meta_data)
+meta_data <- read_excel("data/model_pred_2LRV_cl.xlsx", skip = 2)
+
+m.gen <- metamean(data = meta_data,
+                 n = pred_n,
+                 mean = pred_val,
+                 sd = pred_stddev,
+                 studlab = paper_ID,
+                 exclude = paper_ID %in% c("buschini_2004"),  # Look at Hays only
+                 # exclude = paper_ID %in% c("hays_1967"),  # Look at Buschini only
+                 sm = "MRAW",
+                 common = FALSE,
+                 random = TRUE, 
+                 method.tau = "REML")
+m.gen
+
+m.gen.sub = update.meta(m.gen,
+                        subgroup = paper_ID, 
+                        tau.common = FALSE)
+m.gen.sub
+m.gen.reg = metareg(m.gen, ~paper_ID)
+m.gen.reg
+
+###  Summary
+# 1) Meta-regression doesn't work because there's not enough papers right now  ### 
+# 2) The two studies (Hays and Buschini) are super statistically different (p = 0, I2 = 99.9%)
+# 3) When combined, the two studies are not statistically different from the estimates for Giardia, but that's only because the CI is massive
+# 4) Comparing Buschini to giardia estimates, they're statisticaly different (p < 0.0001), with a mean difference of 12525.3 mg min/L (i.e., Buschini is way larger)
+# 5) Comparing Hays et al. to giardia estimates, they're statisticaly different (p < 0.0001), with a mean difference of 34.5 mg min/L (i.e., giardia is way larger)
+
+
+```
+
+```{r finer statistical analysis to look at papers, fig.width=10, fig.height=5}
+# Load in data
+rm(meta_data)
+meta_data <- read_excel("data/model_pred_2LRV_cl.xlsx", skip = 2)
+# Get one paper only
+# subset_data = filter(meta_data, paper_ID == "buschini_2004")  # Get Buschini
+subset_data = filter(meta_data, paper_ID == "hays_1967")  # Get Hays
+
+# General meta analysis of all studies w/o subgroups
+m.gen <- metamean(data = subset_data,
+                 n = pred_n,
+                 mean = pred_val,
+                 sd = pred_stddev,
+                 # studlab = growth_phase_pub,
+                 studlab = pH,
+                 sm = "MRAW",
+                 common = FALSE,
+                 random = TRUE, 
+                 method.tau = "REML")
+summary(m.gen)
+
+# Look at impact of growth phase, the only thing that differs between the two effect sizes
+update.meta(m.gen,
+            subgroup = pH,
+            tau.common = F,
+            method.tau = "REML",
+            sm = "MRAW")
+summary(m.gen)
+
+forest.meta(m.gen)
+
+# #Not enough data points for meta regression
+
+### Summary:
+# 1) For Buschini, the two conditions (growth vs stationary phase) are statistically different (I2 = 98.6%, p < 0.0001)
+# 2) For Hays, the two conditions (pH 5.3 and 8.6) do not differ (I2 = 0.0%, p = 0.6236)
+
+```
+
+
+```{r fig for pub}
+# Load in data
+rm(meta_data)
+meta_data <- read_excel("data/model_pred_2LRV_cl.xlsx", skip = 2)
+
+# Make fig
+m.gen <- metamean(data = meta_data,
+                 n = pred_n,
+                 mean = pred_val,
+                 sd = pred_stddev,
+                 studlab = paper_ID,
+                 exclude = organism_name %in% c("Protozoa"),
+                 sm = "MRAW",
+                 common = FALSE,
+                 random = TRUE, 
+                 method.tau = "REML")
+m.gen.sub = update.meta(m.gen,
+                        subgroup = organism_name, 
+                        tau.common = FALSE)
+png(file='Clforestplot.png', 
+    width = 11, 
+    height = 3.90,
+    units = "in", 
+    res = 1200)
+forest.meta(m.gen.sub, 
+            prediction = F, 
+            leftcols = c("name_pub", "strain_name", "growth_phase_pub", "water_type_pub", "temp_C"), 
+            # leftlabs = c("Author (year)", "Strain name", "Growth phase", "Water type (pH)", "Temperature, Celsius"), 
+            leftlabs = c("Author (year)",
+                         paste("Strain", "\n", "name", sep = ""),
+                         paste("Growth", "\n", "phase", sep = ""),
+                         paste("Water type", "\n", "(pH)"), 
+                         paste("Temperature,", "\n", "Celsius", sep = "")), 
+            rightcols = c("effect.ci"),
+            rightlabs = c("Mean [95% CI]"),
+            smlab = paste("Free chlorine dose", "\n","for 2 LRV, ", "mg", '\u2022', "min/L", sep = ""),
+            print.subgroup.name = F,
+            print.tau2 = F, 
+            random = FALSE,
+            overall = FALSE,
+            # subgroup.hetstat = FALSE, 
+            digits = 1, 
+            allstudies = T, 
+            sortvar = TE,
+            common = F, 
+            col.square = "white",
+            col.inside = "black"
+            )
+dev.off() 
+
+
+```
+
