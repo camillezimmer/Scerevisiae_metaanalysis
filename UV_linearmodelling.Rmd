@@ -1,0 +1,75 @@
+---
+title: "UV_linearmodelling"
+author: "Camille Zimmer"
+date: "2023-07-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Fresh clean up
+rm(list = ls())
+
+# Loading libraries
+library(readxl)
+library(MASS)
+library(modelr)
+# library(esquisse)
+library(forcats)
+library(patchwork)
+library(tidyverse)
+library(broom)
+library(ggpubr)
+library(interactions)
+library(RColorBrewer)
+
+```
+
+````{r data_import}
+
+# Loading the data into a dataframe 
+uv_raw <- read_excel("data/UV_raw.xlsx", na = "NS")
+
+
+#changing some columns into factors
+cols <- c("paper_ID", "run_id", "organism_name", "strain_type", "strain_name", "growth_phase", 
+          "water_type", "enum_method", "lamp_power", "fluence_rate", "UV_type", 
+          "stat_info", "growth_source")
+
+uv_raw[cols] <- lapply(uv_raw[cols], factor)
+
+uv_raw$strain_name <- relevel(uv_raw$strain_name, 'bakers')
+uv_raw$strain_type <- relevel(uv_raw$strain_type, 'wild-type')
+
+#making N0 levels
+
+uv_raw <- uv_raw %>% 
+  mutate(N0_lvl =
+           ifelse(N0 < 1e4, '<1e04',
+                  ifelse(N0 < 1e5, '[1e04-1e05[',
+                  ifelse(N0 < 1e6, '[1e05-1e06[',
+                  ifelse(N0 < 1e7, '[1e06-1e07[',
+                  '>1e07'
+                  )))))
+
+uv_raw$N0_lvl <- as.factor(uv_raw$N0_lvl)
+#making the most frequent lvl the reference factor (for modeling later)
+uv_raw$N0_lvl <- relevel(uv_raw$N0_lvl, '[1e06-1e07[')
+
+
+
+#adding a LRV variable and removing survival of 0%
+#The reason why we exclude survival of 100% is because when a non-detect is reached in an experiment, 
+#we can't know the actual fluence value that would have given the non-detect in the first place, it's an upper bound
+#the reasoning behind excluding survival of 0% is that our model will use the data points where a certain survival is acheived with a known fluence
+#and the model will be able to predict what fluence is needed to acheive 0% survival.
+
+uv_raw <- uv_raw %>%
+  filter(!(survival == 0)) %>% 
+  mutate(LRV = -log10(survival))
+
+# Dataframe for yeast only
+yeast <- filter(uv_raw, organism_name == 'yeast')
+
+````
