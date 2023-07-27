@@ -73,3 +73,447 @@ uv_raw <- uv_raw %>%
 yeast <- filter(uv_raw, organism_name == 'yeast')
 
 ````
+
+We can see that bisquert_2018 and daryany_2008 have some very high fluences compare to the other papers
+
+````{r stats_perpaper}
+
+tapply(yeast$fluence, yeast$paper_ID, summary) 
+
+````
+
+
+````{r examine_daryany_bisquert}
+
+ yeast %>% filter(paper_ID %in% c('daryany_2008', 'bisquert_2018')) %>% 
+  ggplot()+
+  aes(x = fluence, fill = UV_type) +
+  geom_histogram(bins = 10)+
+  xlab(expression("Fluence [J/"*"m"^2*"]"))+
+  facet_wrap(~ paper_ID, ncol = 2, scales = 'free')+
+  theme_bw()
+
+````
+Bisquert_2018 has only two values... 0 and then a super high fluence. This paper will therefore be removed from the pooled data. Daryany_2008 has some very high fluences for UVA.
+
+```` {r daryany_explore}
+
+yeast %>% 
+  filter(paper_ID == 'daryany_2008' & UV_type == 'UVC' & fluence != 0) %>% 
+  ggplot()+
+  aes(y = LRV, x = fluence, colour = run_id) +
+  geom_point()
+  xlab(expression("Fluence [J/"*"m"^2*"]"))+
+  theme_bw()
+  
+````
+Removing bisquert_2018 and UVA runs of daryany_2018
+````{r data_cleanup}
+
+yeast <- yeast %>% 
+  filter(!(paper_ID == "daryany_2008" & UV_type =='UVA'), paper_ID != 'bisquert_2018')
+
+````
+
+```` {r hist_check}
+summary(yeast$fluence)
+
+ggplot(yeast) +
+  aes(x = fluence, fill = paper_ID) +
+  geom_histogram(bins = 30L) +
+  xlab(expression("Fluence [J/"*"m"^2*"]"))+
+  theme_bw()
+
+````
+
+daryany_2008 still has two values that seem to be very out of range compared to the rest of the papers.
+I will limit the fluence to 2000 J/m^2.
+
+```` {r hist_check2}
+yeast <- filter(yeast, fluence < 2000)
+
+summary(yeast$fluence)
+
+histo <- ggplot(yeast) +
+  aes(x = fluence, fill = paper_ID) +
+  geom_histogram(bins = 30L) +
+  xlab(expression("Fluence [J/"*"m"^2*"]"))+
+  theme_bw()
+
+point <- ggplot(yeast) +
+  aes(y = LRV, x = fluence, colour = paper_ID) +
+  geom_point() +
+  xlab(expression("Fluence [J/"*"m"^2*"]"))+
+  theme_bw()+
+  theme(legend.position = 'none')
+
+point + histo
+
+````
+
+```{r pooled_maxquantile, fig.width=12, fig.height=8}
+
+quant_plotter <- function(max_quant) {
+  
+  df <- yeast %>% 
+    mutate(quant_rank = ifelse(fluence > quantile(yeast$fluence, probs = max_quant),
+                               "over", "under"))
+  
+  df$quant_rank <- as.factor(df$quant_rank)
+  
+  p <- ggplot(df) +
+    aes(x = fluence, y = LRV) +
+    geom_point(aes(colour = quant_rank), shape = "circle", size = 1.5) +
+    scale_color_hue(direction = 1) +
+    geom_smooth(colour = 'orange', se = T)+
+    geom_smooth(data=subset(df,quant_rank == "under"), method = 'lm', colour = 'purple', se = F)+
+    xlab(expression("Fluence [J/"*"m"^2*"]"))+
+    ggtitle(str_c('max quantile for fit = ', as.character(max_quant), ' , max fluence = ', as.character(round(quantile(yeast$fluence, probs = max_quant),0)), ' [J/m^2]'))+
+    theme_bw()+
+    theme(plot.title = element_text(hjust = 0.5, colour = 'steelblue'))
+  
+  return(p)
+}
+
+p95 <- quant_plotter(0.95)
+p90 <- quant_plotter(0.90)
+p85 <- quant_plotter(0.85)
+p80 <- quant_plotter(0.80)
+
+p95 + p90 + p85 + p80+
+  plot_annotation(
+  title = 'Linear regression fits based on max quantile vs smooth line for the whole data',
+  theme = theme(plot.title = element_text(face = 'bold', hjust = 0.5)))+
+  plot_layout(nrow = 2, guides = "collect")
+
+```
+
+We can see that if we model the whole data, we would not only get the linear part, but also the tail. By going up to the 90 percentile and modeling with a linear regression, the fit is very similar to the linear part of the whole data and also includes the most data compared to the lower percentiles. The 95 percentile does not fit the linear part as well because it seems that some values are too high of a fluence and probably part of the tail (max fluence of 450 J/m^2 compared to 264 J/m^2 for the 90 percentile). Therefore, the data pooled for the model will go up to the 90 percentile.
+
+``` {r make_90_95_quant}
+
+yeast90 <- filter(yeast, fluence <= ceiling(quantile(yeast$fluence, probs = 0.9)))
+yeast95 <- filter(yeast, fluence <= ceiling(quantile(yeast$fluence, probs = 0.95)))
+
+#linear model for pooled dataset, no grouping 
+
+pooled_m1 <- lm(LRV ~ fluence, yeast90)
+
+grid <- yeast90 %>% 
+  data_grid(fluence) %>% 
+  add_predictions(pooled_m1) 
+
+ggplot(yeast90, aes(x = fluence)) +
+  geom_point(aes(y = LRV)) +
+  geom_line(aes(y = pred), data = grid, colour = "red", size = 1)
+
+
+# residuals of the model
+yeast90<- yeast90 %>% 
+  add_residuals(pooled_m1)
+
+
+glance(pooled_m1)
+
+```
+
+
+``` {r waters1973_explore}
+
+waters1973 <- yeast90 %>% 
+  filter(paper_ID == 'waters_1973')
+
+waters_excl <- yeast90 %>% 
+  filter(paper_ID != 'waters_1973')
+
+ggplot() +
+  geom_point(data = waters_excl, aes(x = fluence, y = LRV))+
+  geom_smooth(data = waters_excl, aes(x = fluence, y = LRV), method = 'lm', color = 'green', linetype = 'dotted', se = F)+
+  geom_point(data = waters1973, aes(x = fluence, y = LRV), color = 'blue')+
+  geom_smooth(data = waters1973, aes(x = fluence, y = LRV), method = 'lm', se = F)+
+  geom_line(data= grid, aes(x = fluence, y = pred), colour = "red", alpha = 0.5, linetype = 'dashed', size = 1)+
+  labs(x = expression("Fluence [J/"*"m"^2*"]"), y = "Residual [LRV]", title = "Linear regression applied to dataset without waters_1973 (green), \nwaters_1973 only (blue) vs the pooled model (red)") +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5, colour = 'steelblue'), legend.position = "bottom") 
+  
+```
+I will not remove Waters_1973 for the pooled modeling for now, but I think it is worth keeping in mind that is looks behave a bit differently than other papers and skews the model down. 
+
+```{r test}
+
+summary(pooled_m1)
+summary(lm(LRV ~ fluence+growth_phase, yeast90))
+summary(lm(LRV ~ fluence+strain_type, yeast90))
+summary(lm(LRV ~ fluence+N0_lvl, yeast90))
+#pooled_m2 <- lm(LRV ~ fluence + strain_name + growth_phase, yeast90)
+#summary(pooled_m2)
+
+```
+
+# The objective of this chunk is to take a first look at the coefficient of lethality for each paper
+````{r find coeffs of lethality,fig.width=12, fig.height=8}
+
+graphdata = yeast95
+# graphdata = yeast90
+
+#Specify "NS" (not specified) as a strain type so that it shows while graphing
+graphdata$strain_type = graphdata$strain_type %>% 
+  as.character()%>%
+  replace_na("NS") %>%
+  factor()
+# str(graphdata)
+
+# Perhaps exclude Schenk (2011) from analysis, as it's two points in a straight line
+# graphdata = filter(graphdata, paper_ID != "schenk_2011")
+  
+
+
+p = ggplot(graphdata, aes(x = fluence, y = LRV, colour = growth_phase, shape = strain_type))+
+  geom_smooth(method = "lm", se = FALSE, size = 0.5)+
+  geom_point()+
+  stat_regline_equation()+
+  # stat_regline_equation(label.x = 200, label.y = 4)+
+  facet_wrap(paper_ID~strain_type)
+  # facet_wrap(strain_type~paper_ID)
+  # facet_wrap(~paper_ID, scales = "free")
+  # facet_wrap(growth_phase+strain_type~paper_ID, scales = "free")
+
+
+print(p)
+
+```
+
+```{r examine "straightforward" plots - i.e., those that only have one curve, fig.width=12, fig.height=8}
+
+straightforward = yeast95
+
+#Delete Sommer and Moustacchi papers because they have more than one factor (e.g., log/stationary phase or lab/wild type)
+straightforward = filter(straightforward, paper_ID != "sommer_1996")
+straightforward = filter(straightforward, paper_ID != "moustacchi_1970")
+
+#Delete Schenk (2011) because it's only two points and throws an error with the Pearson statistics
+straightforward = filter(straightforward, paper_ID != "schenk_2011")
+
+
+#Re-do levels after Sommer and Moustacchi are deleted, so that there are the correct number of loops in the for loop
+straightforward$paper_ID = straightforward$paper_ID %>% 
+  as.character()%>%
+  factor()
+gr = levels(straightforward$paper_ID)
+gr
+str(gr)
+
+#Create dataframe outside the for loop 
+outer_df_straightforward = data.frame()
+
+
+
+##### This section does a for loop to do a linear model for each paper #####
+
+for(i in seq_along(gr)){
+  print(paste(i,gr[i]))
+  tempdata = straightforward %>% subset(paper_ID ==gr[i])
+  print(tempdata)
+  tempmodel = lm(data = tempdata, 
+               formula = LRV~fluence)
+  #Get model statistics
+  tempsummary = summary(tempmodel)
+  temptidy = tidy(tempmodel)
+  tempglance = glance(tempmodel)
+  print(tempsummary)
+  
+  #Get fit statistics
+  temp_corr_coeff = cor.test(tempdata$fluence, tempdata$LRV, 
+                    method = "pearson")
+  #Get Shapiro-Wilk tests to check model assumptions
+  temp_SW_fluence = shapiro.test(tempdata$fluence)
+  temp_SW_LRV = shapiro.test(tempdata$LRV)
+  #put statistics into the df
+  y_int = temptidy$estimate[[1]]
+  y_int_pvalue = temptidy$p.value[[1]]
+  slope = temptidy$estimate[[2]]
+  slope_pvalue = temptidy$p.value[[2]]
+  R2 = tempsummary$r.squared[[1]]
+  adj_R2 = tempsummary$adj.r.squared[[1]]
+  model_pvalue = tempglance$p.value[[1]]
+  pearson_corr_coeff = temp_corr_coeff$estimate[[1]]
+  pearson_pvalue = temp_corr_coeff$p.value[[1]]
+  x_shapiro_pvalue = temp_SW_fluence$p.value[[1]] 
+  y_shapiro_pvalue = temp_SW_LRV$p.value[[1]]
+
+  output = c(y_int, y_int_pvalue, slope, slope_pvalue, R2, adj_R2, model_pvalue, 
+           pearson_corr_coeff, pearson_pvalue, 
+           x_shapiro_pvalue, y_shapiro_pvalue)
+  outer_df_straightforward = rbind(outer_df_straightforward, output)
+
+
+}
+
+####This will happen after the loop
+colnames(outer_df_straightforward) = c("y_int", "y_int_pvalue", "slope", "slope_pvalue", "R2", "adj_R2", "model_pvalue",
+                       "pearson_corr_coeff", "pearson_pvalue", 
+                       "fluencex_shapirowilk_pvalue", "LRVy_shapirowilk_pvalue")
+
+outer_df_straightforward = outer_df_straightforward %>%
+  add_column(paper_ID = gr, .before = "y_int")
+
+
+outer_df_straightforward
+str(outer_df_straightforward)
+#Write summarized "outer_df_straightforward" as a CSV for further examination
+write.csv(outer_df_straightforward,"outer_df_straightforward.csv")
+
+#Specify "NS" (not specified) as a strain type so that it shows while graphing
+straightforward$strain_type = straightforward$strain_type %>% 
+  as.character()%>%
+  replace_na("NS") %>%
+  factor()
+#Plot all the models
+p = ggplot(straightforward, aes(x = fluence, y = LRV, colour = growth_phase, shape = strain_type))+
+  geom_smooth(method = "lm", se = TRUE, size = 0.5)+
+  geom_point()+
+  stat_regline_equation()+
+  # stat_regline_equation(label.x = 200, label.y = 4)+
+  # facet_wrap(paper_ID~strain_type, scales = "free")
+  facet_wrap(paper_ID~strain_type)
+  # facet_wrap(strain_type~paper_ID)
+  # facet_wrap(~paper_ID, scales = "free")
+  # facet_wrap(growth_phase+strain_type~paper_ID, scales = "free")
+print(p)
+
+```
+
+```{r examine the sommer_1996 plot individually, fig.width=12, fig.height=8}
+
+#Subset data for Sommer (1996)
+subset_data = yeast95
+subset_data = filter(subset_data, paper_ID == "sommer_1996")
+# subset_data
+# str(subset_data)
+
+
+#Re-do strain_name levels after subsetting Sommer, so that they are correct
+subset_data$strain_name = subset_data$strain_name %>% 
+  as.character()%>%
+  factor()
+# strain_names_sommer_1996 = levels(subset_data$strain_name)
+
+#Display data for Sommer (1996)
+p = ggplot(subset_data, aes(x = fluence, y = LRV, colour = strain_name, fill = strain_name))+
+  geom_smooth(method = "lm", se = TRUE, alpha = 0.2)+
+  geom_point()+
+  theme_bw()
+print(p)
+
+#Linear modelling
+model = lm(data = subset_data, 
+               formula = LRV~fluence*strain_name)
+#Get model statistics
+summary = summary(model)
+tidy = tidy(model)
+glance = glance(model)
+summary
+tidy
+glance
+
+#Check model
+cor.test(subset_data$fluence, subset_data$LRV, method = "pearson")
+
+#Get Shapiro-Wilk tests to check model assumptions
+shapiro.test(subset_data$fluence)
+shapiro.test(subset_data$LRV)
+
+# Do QQ plots and check residuals
+# Good site on intrepreting residuals: https://www.qualtrics.com/support/stats-iq/analyses/regression-guides/interpreting-residual-plots-improve-regression/
+par(mfrow = c(2, 2))
+plot(model)
+
+```
+#Analysis of Sommer (1996):
+- The model intercept is -0.4666702, and it statistically significant, meaning we see a lag in the dose-respose
+- The model slope is 0.0221812, and is statistically significant, meaning it's distinguisable from a horizantal line (i.e., there is a dose-response relationship)
+- The slope (i.e., the coefficient of lethality) of the strain YNN281xYNN282 is statistically different than the rest, but the intercept is not
+To do: look back at the paper to see what's up with that strain, and the spores version of it too
+- The y-intercept for the strain YNN282 is statistically different than the rest (but the slope is not)
+
+```{r examine the moustacchi_1970 plot individually, fig.width=12, fig.height=8}
+
+subset_data = yeast95
+subset_data = filter(subset_data, paper_ID == "moustacchi_1970")
+# subset_data
+# str(subset_data)
+
+
+#Re-do strain_name levels after subsetting Sommer, so that they are correct
+subset_data$growth_phase = subset_data$growth_phase %>% 
+  as.character()%>%
+  factor()
+
+#Display data
+p = ggplot(subset_data, aes(x = fluence, y = LRV, colour = growth_phase, fill = growth_phase))+
+  geom_smooth(method = "lm", se = TRUE, alpha = 0.2)+
+  geom_point()+
+  theme_bw()
+print(p)
+
+#Linear modelling
+model = lm(data = subset_data, 
+               formula = LRV~fluence*growth_phase)
+#Get model statistics
+summary = summary(model)
+tidy = tidy(model)
+glance = glance(model)
+summary
+tidy
+glance
+
+#Check model
+cor.test(subset_data$fluence, subset_data$LRV, method = "pearson")
+
+#Get Shapiro-Wilk tests to check model assumptions
+shapiro.test(subset_data$fluence)
+shapiro.test(subset_data$LRV)
+
+# Do QQ plots and check residuals
+# Good site on intrepreting residuals: https://www.qualtrics.com/support/stats-iq/analyses/regression-guides/interpreting-residual-plots-improve-regression/
+par(mfrow = c(2, 2))
+plot(model)
+
+```
+#Analysis for Moustacchi (1970)
+- Model intercept (-0.2960919) was statistically significant, meaning that we have a lag. There is no statistical difference (p value = 0.315328) for the intercept between growth and stationary phases... Does that mean we just use the intercept listed first in the model???
+- Model intercept for reference condition (log phase) is stat significant, meaning that it's not a horizonatl line and we have a dose-response relationship
+- There is a statistical difference in the slope (i.e., coefficient of lethality) between log phase and stationary phase (p < 0.01)
+
+```{r examine the schenk_2011 plot individually because it's only two points and throws an error with the Pearson statistics, fig.width=12, fig.height=8}
+
+subset_data = yeast95
+subset_data = filter(subset_data, paper_ID == "schenk_2011")
+subset_data
+str(subset_data)
+
+#Display data
+p = ggplot(subset_data, aes(x = fluence, y = LRV))+
+  geom_smooth(method = "lm", se = TRUE, alpha = 0.2)+
+  geom_point()+
+  theme_bw()
+print(p)
+
+#Linear modelling
+model = lm(data = subset_data, 
+               formula = LRV~fluence)
+#Get model statistics
+summary = summary(model)
+tidy = tidy(model)
+glance = glance(model)
+summary
+tidy
+glance
+## No statistical information available because it's just a line through two points
+
+```
+
+# Analysis
+- No statistical information available since the Schenk (2011) data is just two points on a straight line
+- Intercept = 0
+- Slope (coefficient of lethality) = 0.1417
