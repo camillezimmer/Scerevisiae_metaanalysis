@@ -1,0 +1,451 @@
+---
+title: "meta_analysis_UV"
+author: "Camille Zimmer"
+date: "2023-07-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Fresh clean up
+rm(list = ls())
+
+# Loading libraries
+library(readxl)
+library(MASS)
+library(modelr)
+library(forcats)
+library(patchwork)
+library(tidyverse)
+library(broom)
+library(ggpubr)
+library(interactions)
+library(RColorBrewer)
+library(utf8)
+library(meta) # For metamean, etc for statistical analysis
+
+```
+
+
+```{r subgroups statistical analysis for overall yeast vs crypto & giardia}
+# Load in data
+rm(meta_data)
+meta_data <- read_excel("data/model_pred_2LRV_UV.xlsx", skip = 2)
+
+# Filter Qian out because they use v high fluences
+meta_data = filter(meta_data, paper_ID != "qian_2004")
+
+# uncomment the next line to do a baker's yeast only analysis
+meta_data = filter(meta_data, strain_category == "wt-bakers" | strain_category == "protozoa")
+
+
+
+##### Crypto #####
+m.gen <- metamean( 
+                 n = pred_n,
+                 mean = pred_val,
+                 sd = pred_stddev,
+                 # TE = pred_val,
+                 # seTE = pred_stderr,
+                 studlab = data_name,
+                 data = filter(meta_data, organism_name != "giardia"),
+                 exclude = paper_ID %in% c("bisquert_2018"),
+                 sm = "MRAW",
+                 common = FALSE,
+                 random = TRUE, 
+                 method.tau = "REML")
+                  # , hakn = TRUE)
+
+update.meta(m.gen, 
+            subgroup = organism_name, 
+            tau.common = FALSE)
+m.gen.reg = metareg(m.gen, ~organism_name)
+m.gen.reg
+
+##### Giardia #####
+m.gen <- metamean( 
+                 n = pred_n,
+                 mean = pred_val,
+                 sd = pred_stddev,
+                 studlab = data_name,
+                 data = filter(meta_data, organism_name != "crypto"),
+                 exclude = paper_ID %in% c("bisquert_2018"),
+                 sm = "MRAW",
+                 common = FALSE,
+                 random = TRUE, 
+                 method.tau = "REML")
+                  # , hakn = TRUE)
+update.meta(m.gen, 
+            subgroup = organism_name, 
+            tau.common = FALSE)
+m.gen.reg = metareg(m.gen, ~organism_name)
+m.gen.reg
+
+```
+
+
+```{r subgroups statistical analysis for strain type and log vs stat phase}
+# Load in data
+rm(meta_data)
+meta_data <- read_excel("data/model_pred_2LRV_UV.xlsx", skip = 2)
+
+# Filter Bisquert out because it screws everything up
+meta_data = filter(meta_data, paper_ID != "bisquert_2018")
+#Filter Qiann & USEPA with Giardia
+meta_data = filter(meta_data, paper_ID != "qian_2004")
+meta_data = filter(meta_data, paper_ID != "usepa_2006")
+
+# General meta analysis of all studies w/o subgroups
+m.gen <- metamean( 
+                 n = pred_n,
+                 mean = pred_val,
+                 sd = pred_stddev,
+                 # TE = pred_val,
+                 # seTE = pred_stderr,
+                 studlab = data_name,
+                 data = meta_data,
+                 sm = "MRAW",
+                 common = FALSE,
+                 random = TRUE, 
+                 method.tau = "REML")
+                  # , hakn = TRUE)
+summary(m.gen)
+
+##### Yeast strains #####
+update.meta(m.gen, 
+            subgroup = strain_category, 
+            tau.common = FALSE, 
+            method.tau = "REML",
+            sm = "MRAW")
+m.gen.reg = metareg(m.gen, ~strain_category)
+m.gen.reg
+
+
+##### Logarithmic vs stationary #####
+update.meta(m.gen, 
+            subgroup = growth_phase, 
+            tau.common = FALSE, 
+            method.tau = "REML",
+            sm = "MRAW")
+m.gen.reg = metareg(m.gen, ~growth_phase)
+m.gen.reg
+
+```
+
+
+```{r statistical analysis to compare different strains of Sommer 1996, fig.width=10, fig.height5}
+
+# Load in data
+rm(meta_data)
+meta_data <- read_excel("data/model_pred_2LRV_UV.xlsx", skip = 2)
+
+# Get sommer only
+sommer_data = filter(meta_data, paper_ID == "sommer_1996")
+
+# General meta analysis of all studies w/o subgroups
+m.gen <- metamean( 
+                 n = pred_n,
+                 mean = pred_val,
+                 sd = pred_stddev,
+                 studlab = strain_name,
+                 exclude = strain_name %in% c("YNN282"),
+                 # exclude = strain_name %in% c("YNN282") | strain_name %in% c("YNN281xYNN282"),
+                 # studlab = paper_ID,
+                 data = sommer_data,
+                 sm = "MRAW",
+                 common = FALSE,
+                 random = TRUE, 
+                 method.tau = "REML", 
+                prediction = TRUE)
+summary(m.gen)
+
+update.meta(m.gen,
+            subgroup = subset_no,
+            tau.common = F,
+            method.tau = "REML",
+            sm = "MRAW")
+summary(m.gen)
+
+forest.meta(m.gen)
+
+
+m.gen.reg = metareg(m.gen, ~subset_no)
+m.gen.reg
+
+
+### Summary: 
+# 1)  When all 5 strains are evaluated together, there is high heterogenetiy and the results are statistically different (like an ANOVA; p < 0.0001, I2 = 86.2%)
+#     I.e., one of these things is not like the other
+# 2)  When Baker's, RC43a and YNN281 are grouped together, they have zero (?) heterogeneatity (p = 0.5480, I2 = 0.0%) and are not statistically different
+#     The three together have a summary estimate of 114.2404 (110.2303; 118.2505)
+# 3)  When strain YNN281xYNN282 is compared as a subgroup to the three heterogenous strains using meta regression, it is statistically different (p = 0.0022; estimated mean difference of 45.4)
+# 4)  When strain YNN282 is compared as a subgroup to the three heterogenous strains using meta regression, it is statistically different (p < 0.0001; estimated mean difference of -19.5)
+
+```
+
+```{r statistical analysis to compare different wild-type strains log vs stationary, fig.width=10, fig.height5}
+# Load in data
+rm(meta_data)
+meta_data <- read_excel("data/model_pred_2LRV_UV.xlsx", skip = 2)
+# Get wild-type strains only
+wt_data = filter(meta_data, strain_category == "wt")
+
+# General meta analysis of all studies w/o subgroups
+m.gen <- metamean( 
+                 n = pred_n,
+                 mean = pred_val,
+                 sd = pred_stddev,
+                 studlab = strain_name,
+                 # exclude = growth_phase %in% c("log"),  # Look at stationary phase only
+                 # exclude = growth_phase %in% c("stationary"),  # Look at log phase only
+                 data = wt_data,
+                 sm = "MRAW",
+                 common = FALSE,
+                 random = TRUE, 
+                 method.tau = "REML", 
+                prediction = TRUE)
+summary(m.gen)
+
+update.meta(m.gen,
+            subgroup = growth_phase,
+            tau.common = F,
+            method.tau = "REML",
+            sm = "MRAW")
+summary(m.gen)
+
+forest.meta(m.gen)
+
+
+m.gen.reg = metareg(m.gen, ~growth_phase)
+m.gen.reg
+
+
+### Summary: 
+# 1)  Wild type, stationary phase only: Statistically different (I2 = 85.3%, p < 0.0001)
+# 2)  Wild type, log phase only: Statistically different (I2 = 98.2%, p < 0.0001)
+# 3)  Subgroup meta-regression comparing stationary vs log phase for WT yeast finds that they're statistically the same (p = 0.7519) but overall heterogenous (I2 = 99.24%)
+
+```
+
+```{r statistical analysis to compare different baker's yeast estimates log vs stationary phase, fig.width=10, fig.height = 5}
+# Load in data
+rm(meta_data)
+meta_data <- read_excel("data/model_pred_2LRV_UV.xlsx", skip = 2)
+# Get wild-type strains only
+bakers_data = filter(meta_data, strain_category == "wt-bakers")
+
+# General meta analysis of all studies w/o subgroups
+m.gen <- metamean( 
+                 n = pred_n,
+                 mean = pred_val,
+                 sd = pred_stddev,
+                 studlab = strain_name,
+                 # exclude = growth_phase %in% c("log"),  # Look at stationary phase only
+                 # exclude = growth_phase %in% c("stationary"),  # Look at log phase only
+                 data = bakers_data,
+                 sm = "MRAW",
+                 common = FALSE,
+                 random = TRUE, 
+                 method.tau = "REML", 
+                prediction = TRUE)
+summary(m.gen)
+m.gen.reg = metareg(m.gen, ~growth_phase)
+m.gen.reg
+
+update.meta(m.gen,
+            subgroup = growth_phase,
+            tau.common = F,
+            method.tau = "REML",
+            sm = "MRAW")
+summary(m.gen)
+
+forest.meta(m.gen)
+
+### Summary: 
+# 1)  Using all 3 estimates, they're statistically different (I2 = 98.8%, p < 0.0001)
+# 2)  Looking at only log phase studies, they're statistically different too (I2 = 98.7%, P . 0.0001)
+# 3)  Comparing log vs stationary phase using meta-regression, they're not statistically different (p = 0.4931)
+
+```
+
+```{r statistical analysis to compare different growth phase estimates from Moustacchi, fig.width=10, fig.height5}
+
+# Load in data
+rm(meta_data)
+meta_data <- read_excel("data/model_pred_2LRV_UV.xlsx", skip = 2)
+# Get wild-type strains only
+subset_data = filter(meta_data, paper_ID == "moustacchi_1970")
+
+# General meta analysis of all studies w/o subgroups
+m.gen <- metamean( 
+                 n = pred_n,
+                 mean = pred_val,
+                 sd = pred_stddev,
+                 studlab = data_name,
+                 # exclude = growth_phase %in% c("log"),  # Look at stationary phase only
+                 # exclude = growth_phase %in% c("stationary"),  # Look at log phase only
+                 data = subset_data,
+                 sm = "MRAW",
+                 common = FALSE,
+                 random = TRUE, 
+                 method.tau = "REML", 
+                prediction = TRUE)
+summary(m.gen)
+
+### Summary: 
+# 1)  In Moustacchi & Enteric (1970), the two phases are highly heterogeneous and statistically different (I2 = 96.3%, p < 0.0001)
+# 2)  The three papers that are stationary phase differ significantly from the paper that is log phase (p < 0.0001)
+# 3)  The three papers that are stationary phase have moderate heterogeneity do not differ significantly from each other (I2 = 39.8%, p = 0.1900)
+
+```
+
+
+```{r statistical analysis to compare different growth phase estimates of the RAD 197/2d strain, fig.width=10, fig.height = 5}
+# Load in data
+rm(meta_data)
+meta_data <- read_excel("data/model_pred_2LRV_UV.xlsx", skip = 2)
+# Get wild-type strains only
+subset_data = filter(meta_data, paper_ID == "waters_1973" | paper_ID == "zuk_1975" | paper_ID == "zuk_1978" | paper_ID == "swietlinska_1976")
+# General meta analysis of all studies w/o subgroups
+m.gen <- metamean( 
+                 n = pred_n,
+                 mean = pred_val,
+                 sd = pred_stddev,
+                 studlab = data_name,
+                 # exclude = growth_phase %in% c("log"),  # Look at stationary phase only
+                 # exclude = growth_phase %in% c("stationary"),  # Look at log phase only
+                 data = subset_data,
+                 sm = "MRAW",
+                 common = FALSE,
+                 random = TRUE, 
+                 method.tau = "REML", 
+                prediction = TRUE)
+summary(m.gen)
+
+update.meta(m.gen,
+            subgroup = growth_phase,
+            tau.common = F,
+            method.tau = "REML",
+            sm = "MRAW")
+summary(m.gen)
+
+forest.meta(m.gen)
+
+m.gen.reg = metareg(m.gen, ~growth_phase)
+m.gen.reg
+
+### Summary: 
+# 1)  The effect size differs between the four papers (I2 = 95.4%, p < 0.0001)
+# 2)  The three papers that are stationary phase differ significantly from the paper that is log phase (p < 0.0001)
+# 3)  The three papers that are stationary phase have moderate heterogeneity do not differ significantly from each other (I2 = 39.8%, p = 0.1900)
+
+```
+
+```{r funnel plot for pub}
+
+# Load in data
+rm(meta_data)
+meta_data <- read_excel("data/model_pred_2LRV_UV.xlsx", skip = 2)
+# Filter Bisquert out because it fucks everything up
+meta_data = filter(meta_data, paper_ID != "bisquert_2018")
+#Filter Qiann & USEPA with Giardia
+meta_data = filter(meta_data, paper_ID != "qian_2004")
+meta_data = filter(meta_data, paper_ID != "usepa_2006")
+
+# General meta analysis of all studies w/o subgroups
+m.gen <- metamean( 
+                 n = pred_n,
+                 mean = pred_val,
+                 sd = pred_stddev,
+                 # TE = pred_val,
+                 # seTE = pred_stderr,
+                 studlab = data_name,
+                 data = meta_data,
+                 sm = "MRAW",
+                 common = FALSE,
+                 random = TRUE, 
+                 method.tau = "REML")
+                  # , hakn = TRUE)
+summary(m.gen)
+
+##### Funnel plot #####
+# funnel.meta(m.gen, studlab = TRUE)
+png(file='UVfunnelplot.png', 
+    width = 7, 
+    height = 5,
+    units = "in", 
+    res = 1200)
+col.contour = c("gray75", "gray85", "gray95")
+funnel.meta(m.gen, studlab = F, 
+            contour = c(0.9, 0.95, 0.99),
+            col.contour = col.contour, 
+            xlab = paste("UV dose for 2 LRV, ",  "J/m", '\u00B2', sep = ""))
+legend(x = -400, y = 0.01, 
+       legend = c("p < 0.1", "p < 0.05", "p < 0.01"),
+       fill = col.contour)
+title("")
+dev.off()
+```
+
+```{r figure for pub using forest.meta}
+
+# Load in data
+rm(meta_data)
+meta_data <- read_excel("data/model_pred_2LRV_UV.xlsx", skip = 2)
+
+#Filter Qiann 
+meta_data = filter(meta_data, paper_ID != "qian_2004")
+
+#Order subgroups
+meta_data$strain_category_pub = factor(meta_data$strain_category_pub, levels = c("Baker's yeast", "Laboratory strain", "Wild-type", "Protozoa"))
+
+# General meta analysis of all studies w/o subgroups
+m.gen <- metamean( 
+                 n = pred_n,
+                 mean = pred_val,
+                 sd = pred_stddev,
+                 studlab = data_name,
+                 data = meta_data,
+                 sm = "MRAW",
+                 common = FALSE,
+                 random = TRUE, 
+                 exclude = strain_category %in% c("protozoa") | paper_ID %in% c("bisquert_2018"),
+                 method.tau = "REML"
+                 )
+
+summary(m.gen)
+
+# Add subgroups
+m.gen.sub = update(m.gen, subgroup = strain_category_pub)
+
+# Graph it
+png(file='UVforestplot.png', 
+    width = 11, 
+    height = 8,
+    units = "in", 
+    res = 1200)
+forest.meta(m.gen.sub, 
+            prediction = F, 
+            leftcols = c("rownames_forpub", "strain_name", "growth_phase_pub", "water_type_pub"), 
+            # leftlabs = c("Author (year)", "Strain name", "Growth phase", "Water type (pH)"), 
+            leftlabs = c("Author (year)",
+                         paste("Strain", "\n", "name", sep = ""),
+                         paste("Growth", "\n", "phase", sep = ""),
+                         paste("Water type", "\n", "(pH)")),
+            rightcols = c("effect.ci", "w.random"),
+            # rightlabs = c("Mean [95% CI], J/m^2", "Weight"),
+            rightlabs = c("Mean [95% CI]", "Weight"), 
+            smlab = paste("UV dose","\n", "for 2 LRV, ",  "J/m", '\u00B2', sep = ""), 
+            print.subgroup.name = F,
+            print.tau2 = F, 
+            # addrows = 2, 
+            # addrows.below.overall =  4,
+            common = FALSE, 
+            digits = 1, 
+            allstudies = T, 
+            col.inside = "black"
+            )
+dev.off() 
+
+```
