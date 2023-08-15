@@ -1,0 +1,196 @@
+---
+title: "meta_analysis_O3"
+author: "Camille Zimmer"
+date: "2023-08-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Fresh clean up
+rm(list = ls())
+
+# Loading libraries
+library(readxl)
+library(MASS)
+library(modelr)
+# library(esquisse)
+library(forcats)
+library(patchwork)
+library(tidyverse)
+library(broom)
+library(ggpubr)
+library(interactions)
+library(RColorBrewer)
+# library(metafor)
+library(meta)
+# library(forestplot)
+library(utf8)
+
+```
+
+```{r basic statistical analysis for pub}
+# Load in data
+rm(meta_data)
+meta_data <- read_excel("data/model_pred_2LRV_O3.xlsx", skip = 2)
+
+#do meta analysis
+m.gen <- metamean(data = meta_data,
+                 n = pred_n,
+                 mean = pred_val,
+                 sd = pred_stddev,
+                 studlab = paper_ID,
+                 # exclude = strain_name %in% c("Giardia"),
+                 sm = "MRAW",
+                 common = FALSE,
+                 random = TRUE, 
+                 method.tau = "REML")
+m.gen
+
+update.meta(m.gen,
+            subgroup = strain_type,
+            tau.common = FALSE)
+m.gen
+
+###  Meta-regression doesn't work because there's not enough papers right now  ### 
+# m.gen.reg = metareg(m.gen, ~rownames)
+# m.gen.reg
+
+### Summary: 
+# 1) There is high heterogenaity among the yeast studies (I2 = 99.7%; p = 0)
+# 2) Comparing here doesn't work because the two studies have such a wide CI, it returns a non-sig p value which is bananas.
+
+```
+
+```{r statistical analysis look at Dubeau, fig.width=13, fig.height=5}
+# Load in data
+rm(meta_data)
+meta_data <- read_excel("data/model_pred_2LRV_O3.xlsx", skip = 2)
+# Get one paper only
+# subset_data = filter(meta_data, paper_ID == "dubeau_1979")  # Get Dubeau
+subset_data = filter(meta_data, paper_ID != "USEPA_1991")   # Exclude USEPA
+
+# do meta analysis
+m.gen <- metamean(data = subset_data,
+                 n = pred_n,
+                 mean = pred_val,
+                 sd = pred_stddev,
+                 studlab = growth_phase,
+                 exclude = paper_ID %in% c("watanabe_2010"), # only look at Dubeau studies in regular distilled water, not broth
+                 # exclude = paper_ID %in% c("watanabe_2010") | water_type %in% c("YEPD"), # only look at Dubeau studies in regular distilled water, not broth
+                 sm = "MRAW",
+                 common = FALSE,
+                 random = TRUE, 
+                 method.tau = "REML")
+
+update.meta(m.gen, 
+            subgroup = water_type, 
+            tau.common = FALSE, 
+            method.tau = "REML",
+            sm = "MRAW")
+m.gen
+m.gen.reg = metareg(m.gen, ~water_type)
+m.gen.reg
+forest.meta(m.gen)
+
+### Summary
+# 1) Again, high heterogenity among the yeast studies
+# 2) Looking at only the regular distilled water in Dubeau, they're significantly different (I2 = 99.5%, p < 0.0001) i.e., growth phases are different
+# 3) Looking at all waters including YEPD, they're also different (I2 = 99.3%, p < 0.0001)
+# 4) The three estimates using distilled water are different from the estimate using YEPD (p < 0.0001, mean difference = 8299.5)
+
+```
+
+
+```{r statistical analysis compare each study to USEPA, fig.width=13, fig.height=5}
+# Load in data
+rm(meta_data)
+meta_data <- read_excel("data/model_pred_2LRV_O3.xlsx", skip = 2)
+# Get one paper only
+subset_data = filter(meta_data, paper_ID != "watanabe_2010")  # Get Dubeau and USEPA
+# subset_data = filter(meta_data, paper_ID != "dubeau_1979")  # Get watanabe and USEPA
+# subset_data = filter(meta_data, paper_ID != "USEPA_1991")   # Exclude USEPA
+# Filter out data at less than 20C
+subset_data = filter(subset_data, temp_C > 19)
+
+# do meta analysis
+m.gen <- metamean(data = subset_data,
+                 n = pred_n,
+                 mean = pred_val,
+                 sd = pred_stddev,
+                 studlab = paper_ID,
+                 # exclude = paper_ID %in% c("watanabe_2010"), # only look at Dubeau studies in regular distilled water, not broth
+                 exclude = water_type %in% c("YEPD"), # only look at regular distilled water, not broth
+                 sm = "MRAW",
+                 common = FALSE,
+                 random = TRUE, 
+                 method.tau = "REML")
+
+update.meta(m.gen, 
+            subgroup = strain_type, 
+            tau.common = FALSE, 
+            method.tau = "REML",
+            sm = "MRAW")
+m.gen
+forest.meta(m.gen)
+m.gen.reg = metareg(m.gen, ~strain_type)
+
+
+### Summary
+# 1) Watanabe differs (I2 = 99.9%, p , 0.0001) from the Giardia estimates by the USEPA, 20 and 25 C only
+# 2) dubeau and Chung the same (p = 0.0021), if you exclude YEPD, which I think we should. If you include YEPD the CI is so massive (encompassing zero) that you get no stat diff
+
+```
+
+```{r fig for pub}
+
+#Order subgroups
+meta_data$strain_name = factor(meta_data$strain_name, levels = c("C465-7A", "NBRC1046", "Giardia"))
+
+m.gen <- metamean(data = meta_data,
+                 n = pred_n,
+                 mean = pred_val,
+                 sd = pred_stddev,
+                 studlab = paper_ID,
+                 exclude = strain_name %in% c("Giardia"),
+                 sm = "MRAW",
+                 common = FALSE,
+                 random = TRUE, 
+                 method.tau = "REML")
+
+m.gen.sub = update.meta(m.gen, 
+                        subgroup = organism_name, 
+                        tau.common = FALSE)
+png(file='O3forestplot.png', 
+    width = 11.5, 
+    height = 4.25,
+    units = "in", 
+    res = 1200)
+forest.meta(m.gen.sub, 
+            prediction = F, 
+            leftcols = c("name_pub", "strain_name", "growth_phase_pub", "water_type_pub", "temp_C"), 
+            leftlabs = c("Author (year)",
+                         paste("Strain", "\n", "name", sep = ""),
+                         paste("Growth", "\n", "phase", sep = ""),
+                         paste("Water type", "\n", "(pH)"), 
+                         paste("Temperature,", "\n", "Celsius", sep = "")), 
+            # leftlabs = c("Author (year)", "Strain name", "Growth phase", "Water type (pH)", "Temperature, Celsius"), 
+            rightcols = c("effect.ci"),
+            rightlabs = c("Mean [95% CI]"), 
+            # rightlabs = c(paste("Mean [95% CI],", "\n", "mg", '\u2022', "min/L", sep = "")), 
+            smlab = paste("Ozone dose","\n", "for 2 LRV, ",  "mg", '\u2022', "min/L", sep = ""), 
+            print.subgroup.name = F,
+            print.tau2 = F, 
+            random = FALSE,
+            overall = FALSE,
+            # subgroup.hetstat = FALSE, 
+            sortvar = TE,
+            digits = 1, 
+            allstudies = T, 
+            col.square = "white",
+            col.inside = "black"
+            )
+dev.off() 
+
+```

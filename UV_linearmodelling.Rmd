@@ -361,7 +361,7 @@ outer_df_straightforward = outer_df_straightforward %>%
 outer_df_straightforward
 str(outer_df_straightforward)
 #Write summarized "outer_df_straightforward" as a CSV for further examination
-write.csv(outer_df_straightforward,"outer_df_straightforward.csv")
+write.csv(outer_df_straightforward,"outer_df_straightforward_UV.csv")
 
 #Specify "NS" (not specified) as a strain type so that it shows while graphing
 straightforward$strain_type = straightforward$strain_type %>% 

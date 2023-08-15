@@ -1,0 +1,117 @@
+---
+title: "meta_analysis_ClO2"
+author: "Camille Zimmer"
+date: "2023-08-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Fresh clean up
+rm(list = ls())
+
+# Loading libraries
+library(readxl)
+library(MASS)
+library(modelr)
+# library(esquisse)
+library(forcats)
+library(patchwork)
+library(tidyverse)
+library(broom)
+library(ggpubr)
+library(interactions)
+library(RColorBrewer)
+# library(metafor)
+library(meta)
+# library(forestplot)
+library(utf8)
+```
+
+
+```{r statistical analysis to compare giardia for pub}
+# Load up data
+rm(meta_data)
+meta_data <- read_excel("data/model_pred_2LRV_clo2.xlsx", skip = 2)
+
+#Look at buschini only
+subset_data = filter(meta_data, paper_ID == "buschini_2004")  # Get Buschini
+
+# do meta analysis
+m.gen <- metamean(data = subset_data,
+                 n = pred_n,
+                 mean = pred_val,
+                 sd = pred_stddev,
+                 studlab = paper_ID,
+                 # exclude = strain_name %in% c("Giardia"),
+                 sm = "MRAW",
+                 common = FALSE,
+                 random = TRUE, 
+                 method.tau = "REML")
+
+update.meta(m.gen, 
+            subgroup = growth_phase_pub, 
+            tau.common = FALSE, 
+            method.tau = "REML",
+            sm = "MRAW")
+m.gen
+
+###  Meta-regression doesn't work because there's not enough papers right now  ### 
+# m.gen.reg = metareg(m.gen, ~rownames)
+# m.gen.reg
+
+
+### Summary
+# 1) If we include giardia, the calculations to get I2 and p values don't converge so I don't have those
+# 2) The two experimental conditions in Buschini (i.e., growth and stationary phase) are different (I2 = 89.8%, p = 0.0017)
+```
+
+```{r fig for pub}
+m.gen <- metamean(data = meta_data,
+                 n = pred_n,
+                 mean = pred_val,
+                 sd = pred_stddev,
+                 studlab = paper_ID,
+                 exclude = strain_name %in% c("Giardia"),
+                 sm = "MRAW",
+                 common = FALSE,
+                 random = TRUE, 
+                 method.tau = "REML")
+
+m.gen.sub = update.meta(m.gen, 
+                          subgroup = organism_name, 
+                          tau.common = FALSE)
+
+png(file='ClO2forestplot.png', 
+    width = 11, 
+    height = 3.4,
+    units = "in", 
+    res = 1200)
+forest.meta(m.gen.sub, 
+            prediction = F, 
+            leftcols = c("name_pub", "strain_name", "growth_phase_pub", "water_type_pub", "temp_C"), 
+            leftlabs = c("Author (year)",
+                         paste("Strain", "\n", "name", sep = ""),
+                         paste("Growth", "\n", "phase", sep = ""),
+                         paste("Water type", "\n", "(pH)"), 
+                         paste("Temperature,", "\n", "Celsius", sep = "")), 
+            # leftlabs = c("Author (year)", "Strain name", "Growth phase", "Water type (pH)", "Temperature, Celsius"), 
+            rightcols = c("effect.ci"),
+            rightlabs = c("Mean [95% CI]"),
+            # smlab = paste("Chlorine dioxide dose", "\n","required for 2 LRV", sep = ""),
+            smlab = paste("Chlorine dioxide dose", "\n","for 2 LRV, ", "mg", '\u2022', "min/L", sep = ""),
+            print.subgroup.name = F,
+            print.tau2 = F, 
+            random = FALSE,
+            overall = FALSE,
+            # subgroup.hetstat = FALSE, 
+            digits = 1, 
+            allstudies = T, 
+            sortvar = TE, 
+            col.square = "white",
+            col.inside = "black"
+            )
+dev.off() 
+
+```

@@ -1,0 +1,308 @@
+---
+title: "O3_linearmodelling"
+author: "Camille Zimmer"
+date: "2023-08-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Fresh clean up
+rm(list = ls())
+
+# Loading libraries
+library(readxl)
+library(MASS)
+library(modelr)
+library(forcats)
+library(patchwork)
+library(tidyverse)
+library(broom)
+library(ggpubr)
+library(interactions)
+library(RColorBrewer)
+
+```
+
+
+```{r data import}
+# Loading the data into a dataframe 
+rm(O3_raw)
+O3_raw <- read_excel("data/O3_data_master.xlsx", skip = 15)
+
+#changing some columns into factors
+cols <- c("paper_ID", "organism_name", "strain_type", "strain_name", "growth_phase", 
+          "water_type", "enum_method",  
+          "stat_info", "compound_name", "O3_bubblerate")
+
+O3_raw[cols] <- lapply(O3_raw[cols], factor)
+
+#adding a LRV variable and removing survival of 0%
+#The reason why we exclude survival of 100% is because when a non-detect is reached in an experiment, 
+#we can't know the actual dose value that would have given the non-detect in the first place, it's an upper bound
+#the reasoning behind excluding survival of 0% is that our model will use the data points where a certain survival is acheived with a known dose
+#and the model will be able to predict what dose is needed to acheive 0% survival.
+
+O3_raw <- O3_raw %>%
+  filter(!(survival == 0)) %>% 
+  mutate(LRV = -log10(survival))
+
+# Dataframe for yeast only
+yeast <- filter(O3_raw, organism_name == 'yeast')
+# str(yeast)
+
+```
+
+```{r first look at yeast data, fig.width=8, fig.height=5}
+
+
+p = ggplot(yeast, aes(x = dose, y = LRV, colour = growth_phase))+
+  geom_smooth(method = "lm", se = TRUE, size = 0.5)+
+  geom_point()+
+  facet_wrap(~paper_ID, ncol = 2, scales = "free")+
+  stat_regline_equation()
+
+print(p)
+
+
+# Look at top 95% of dose data, so that we try to minimize the "Tail"
+yeast95 <- filter(yeast, dose <= ceiling(quantile(yeast$dose, probs = 0.95)))
+p = ggplot(yeast95, aes(x = dose, y = LRV, colour = growth_phase))+
+  geom_smooth(method = "lm", se = TRUE, size = 0.5)+
+  geom_point()+
+  facet_wrap(~paper_ID, ncol = 2, scales = "free_x")+
+  stat_regline_equation()
+
+
+print(p)
+
+```
+
+
+
+```{r look closer at watanabe_2010, fig.width=8, fig.height=5}
+
+watanabe_df = filter(yeast, paper_ID == "watanabe_2010")
+
+##### Plot #####
+
+p = ggplot(watanabe_df, aes(x = dose, y = LRV, colour = growth_phase))+
+  geom_smooth(method = "lm", se = TRUE, size = 0.5)+
+  geom_point()+
+  stat_regline_equation()
+
+print(p)
+
+# Look at top 95% of dose data, so that we try to minimize the "Tail"
+## Don't bother, nothing happens
+
+
+##### Do model using all dose data #####
+  tempmodel = lm(data = watanabe_df, 
+               formula = LRV~dose)
+  #Get model statistics
+  tempsummary = summary(tempmodel)
+  temptidy = tidy(tempmodel)
+  tempglance = glance(tempmodel)
+  print(tempsummary)
+  # Slope is  distinguishable from a horiz line, yint is distinguishable from 0, with nice R2 values
+
+  
+  
+##### Do pred #####
+outer_df = data.frame()
+
+
+tempmodel = lm(data = watanabe_df, 
+               formula = dose~LRV)
+  
+predfluence = predict(tempmodel, data.frame(LRV = 2), interval = "confidence", se.fit=TRUE)
+  
+  #Get pred statistics
+  pred_val = predfluence$fit[[1]]
+  pred_l95 = predfluence$fit[[2]]
+  pred_u95 = predfluence$fit[[3]]
+  pred_stderr = predfluence$se.fit
+  pred_df = predfluence$df
+  pred_n = pred_df+2
+  pred_resid = predfluence$residual.scale
+  growth_phase = "late_stat_48h"
+  water_type = "mineral"
+
+  
+#Organize into output
+output = c(water_type, growth_phase, pred_val, pred_l95, pred_u95, pred_stderr, pred_df, pred_n, pred_resid)
+
+#Put into outer df
+outer_df = rbind(outer_df, output)
+
+#Name the columns
+colnames(outer_df) = c('water_type', 'growth_phase', 'pred_val', 'pred_l95', 'pred_u95', 'pred_stderr', 'pred_df', 'pred_n', 'pred_resid')
+
+
+write.csv(outer_df, "outer_df_watanabe_O3.csv")
+
+```
+
+
+
+```{r look closer at dubeau_1979, fig.width=8, fig.height=5}
+
+dubeau_df = filter(yeast, paper_ID == "dubeau_1979")
+
+p = ggplot(dubeau_df, aes(x = dose, y = LRV, colour = growth_phase))+
+  geom_smooth(method = "lm", se = TRUE, size = 0.5)+
+  geom_point()+
+  facet_wrap(~water_type, ncol = 2, scales = "free")+
+  stat_regline_equation()
+
+print(p)
+
+# Look at top 95% of dose data, so that we try to minimize the "Tail"
+dubeau_df_95 <- filter(dubeau_df, dose <= ceiling(quantile(yeast$dose, probs = 0.95)))
+
+p = ggplot(dubeau_df_95, aes(x = dose, y = LRV, colour = growth_phase))+
+  geom_smooth(method = "lm", se = TRUE, size = 0.5)+
+  geom_point()+
+  facet_wrap(~water_type, ncol = 2, scales = "free")+
+  stat_regline_equation()
+
+print(p)
+
+##### Do model using top 95% of dose data #####
+  tempmodel = lm(data = dubeau_df_95, 
+               formula = LRV~dose*growth_phase*water_type)
+  #Get model statistics
+  tempsummary = summary(tempmodel)
+  temptidy = tidy(tempmodel)
+  tempglance = glance(tempmodel)
+  print(tempsummary)
+  # Result: can't distinguish YEPD this way but it looks nice overall
+  # They're  distinguishable from a horiz line, with nice R2 values
+  # All the growth phases are distinct from early_stat_40h and therefore presumably from each other as well
+  
+  
+  ##### Do pred for distilled water #####
+dubeau_df_95_dist = filter(dubeau_df_95, water_type == "distilled")
+
+outer_df = data.frame()
+gr = levels(dubeau_df_95_dist$growth_phase)
+
+for(i in seq_along(gr)){
+  tempdata = dubeau_df_95_dist %>% subset(growth_phase ==gr[i])
+tempmodel = lm(data = tempdata, 
+               formula = dose~LRV)
+  
+predfluence = predict(tempmodel, data.frame(LRV = 2), interval = "confidence", se.fit=TRUE)
+  
+  #Get pred statistics
+  pred_val = predfluence$fit[[1]]
+  pred_l95 = predfluence$fit[[2]]
+  pred_u95 = predfluence$fit[[3]]
+  pred_stderr = predfluence$se.fit
+  pred_df = predfluence$df
+  pred_n = pred_df+2
+  pred_resid = predfluence$residual.scale
+  growth_phase = gr[i]
+  water_type = "distilled"
+  
+#Organize into output
+output = c(water_type, growth_phase, pred_val, pred_l95, pred_u95, pred_stderr, pred_df, pred_n, pred_resid)
+
+#Put into outer df
+outer_df = rbind(outer_df, output)
+
+}
+
+colnames(outer_df) = c('water_type', 'growth_phase', 'pred_val', 'pred_l95', 'pred_u95', 'pred_stderr', 'pred_df', 'pred_n', 'pred_resid')
+
+  ##### Do pred for YEPD #####
+dubeau_df_95_YEPD = filter(dubeau_df_95, water_type == "YEPD")
+
+tempmodel = lm(data = dubeau_df_95_YEPD, 
+               formula = dose~LRV)
+  
+predfluence = predict(tempmodel, data.frame(LRV = 2), interval = "confidence", se.fit=TRUE)
+  
+  #Get pred statistics
+  pred_val = predfluence$fit[[1]]
+  pred_l95 = predfluence$fit[[2]]
+  pred_u95 = predfluence$fit[[3]]
+  pred_stderr = predfluence$se.fit
+  pred_df = predfluence$df
+  pred_n = pred_df+2
+  pred_resid = predfluence$residual.scale
+  growth_phase = "late_stat_48h"
+  water_type = "YEPD"
+
+  
+#Organize into output
+output = c(water_type, growth_phase, pred_val, pred_l95, pred_u95, pred_stderr, pred_df, pred_n, pred_resid)
+
+#Put into outer df
+outer_df = rbind(outer_df, output)
+
+write.csv(outer_df, "outer_df_dubeau_O3.csv")
+
+```
+
+```{r look at giardia}
+# Get Giardia data
+giardia <- filter(O3_raw, organism_name == 'giardia')
+# Make pH a factor
+giardia$temp_C = as.factor(giardia$temp_C)
+
+#####  Make a figure #####
+p = ggplot(giardia, aes(x = dose, y = LRV, colour = temp_C))+
+  geom_smooth(method = "lm", se = TRUE, size = 0.5)+
+  geom_point()+
+  stat_regline_equation()
+print(p)
+
+##### Do model #####
+  tempmodel = lm(data = giardia, 
+               formula = LRV~dose*temp_C)
+  #Get model statistics
+  tempsummary = summary(tempmodel)
+  temptidy = tidy(tempmodel)
+  tempglance = glance(tempmodel)
+  print(tempsummary)
+  # Result: it's a nice model
+  # They're all distinguishable from a horiz line, with nice R2 values
+  # All the temps are distinct from temp =5 and therefore presumably from each other as well
+  # R is warning me that some of the datasets show perfect correlation and therefore should not be trusted
+  
+##### Do pred #####
+outer_df = data.frame()
+gr = levels(giardia$temp_C)
+
+for(i in seq_along(gr)){
+  tempdata = giardia %>% subset(temp_C ==gr[i])
+tempmodel = lm(data = tempdata, 
+               formula = dose~LRV)
+  
+predfluence = predict(tempmodel, data.frame(LRV = 2), interval = "confidence", se.fit=TRUE)
+  
+  #Get pred statistics
+  pred_val = predfluence$fit[[1]]
+  pred_l95 = predfluence$fit[[2]]
+  pred_u95 = predfluence$fit[[3]]
+  pred_stderr = predfluence$se.fit
+  pred_df = predfluence$df
+  pred_n = pred_df+2
+  pred_resid = predfluence$residual.scale
+  temp_C = gr[i]
+  
+#Organize into output
+output = c(temp_C, pred_val, pred_l95, pred_u95, pred_stderr, pred_df, pred_n, pred_resid)
+
+#Put into outer df
+outer_df = rbind(outer_df, output)
+
+}
+
+colnames(outer_df) = c('temp_C', 'pred_val', 'pred_l95', 'pred_u95', 'pred_stderr', 'pred_df', 'pred_n', 'pred_resid')
+write.csv(outer_df, "outer_df_giardia_O3.csv")
+  
+```

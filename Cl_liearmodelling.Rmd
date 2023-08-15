@@ -126,7 +126,7 @@ outer_df_buschini = rbind(outer_df_buschini, output)
 
 colnames(outer_df_buschini) = c('growth_phase', 'pred_val', 'pred_l95', 'pred_u95', 'pred_stderr', 'pred_df', 'pred_n', 'pred_resid')
 
-write.csv(outer_df_buschini, "outer_df_buschini.csv")
+write.csv(outer_df_buschini, "outer_df_buschini_Cl.csv")
 
 ```
 
@@ -176,7 +176,7 @@ outer_df_hays = rbind(outer_df_hays, output)
 }
 
 colnames(outer_df_hays) = c('pH', 'pred_val', 'pred_l95', 'pred_u95', 'pred_stderr', 'pred_df', 'pred_n', 'pred_resid')
-write.csv(outer_df_hays, "outer_df_hays.csv")
+write.csv(outer_df_hays, "outer_df_hays_Cl.csv")
 
 
 #####  Make a figure #####
