@@ -23,7 +23,7 @@ library(ggpubr)
 library(interactions)
 library(RColorBrewer)
 library(utf8)
-library(meta) # For metamean, etc for statistical analysis
+library(meta) # For metamean, etc for statistical analysis # https://cran.r-project.org/web/packages/meta/meta.pdf
 
 ```
 
@@ -447,5 +447,68 @@ forest.meta(m.gen.sub,
             col.inside = "black"
             )
 dev.off() 
+
+```
+
+```{r figure for graphical abstract T&F}
+
+# Load in data
+rm(meta_data)
+meta_data <- read_excel("data/model_pred_2LRV_UV_graph_abstract.xlsx", skip = 2)
+
+#Filter Qiann 
+meta_data = filter(meta_data, paper_ID != "qian_2004")
+
+#Order subgroups
+meta_data$strain_category_pub = factor(meta_data$strain_category_pub, levels = c("Baker's yeast", "Laboratory strain", "Wild-type", "Protozoa"))
+
+# General meta analysis of all studies w/o subgroups
+m.gen <- metamean( 
+                 n = pred_n,
+                 mean = pred_val,
+                 sd = pred_stddev,
+                 studlab = data_name,
+                 data = meta_data,
+                 sm = "MRAW",
+                 common = FALSE,
+                 random = TRUE, 
+                 exclude = strain_category %in% c("protozoa") | paper_ID %in% c("bisquert_2018"),
+                 method.tau = "REML"
+                 )
+
+summary(m.gen)
+
+# Add subgroups
+m.gen.sub = update(m.gen, subgroup = strain_category_pub)
+
+# Graph it
+png(file='UVforestplot_graphabstract.png',
+    width = 8.5,
+    height = 8.5,
+    units = "in",
+    res = 1200)
+
+forest.meta(m.gen.sub, 
+            # subgroup = c("Baker's yeast"),
+            prediction = F, 
+            leftcols = c("rownames_forpub"), 
+            leftlabs = c("Author (year)"),
+            rightcols = c("effect.ci"),
+            rightlabs = c("Mean [95% CI]"), 
+            smlab = paste("UV dose","\n", "for 2 LRV, ",  "J/m", '\u00B2', sep = ""), 
+            print.subgroup.name = F,
+            print.tau2 = F, 
+            # addrows = 2, 
+            # addrows.below.overall =  4,
+            common = FALSE, 
+            digits = 1, 
+            allstudies = T, 
+            col.inside = "black", 
+            text.predict.w = F, 
+            # overall.hetstat = F, 
+            # text.random.w = F
+            test.subgroup = F
+            )
+dev.off()
 
 ```
