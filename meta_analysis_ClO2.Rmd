@@ -15,7 +15,6 @@ rm(list = ls())
 library(readxl)
 library(MASS)
 library(modelr)
-# library(esquisse)
 library(forcats)
 library(patchwork)
 library(tidyverse)
@@ -23,17 +22,18 @@ library(broom)
 library(ggpubr)
 library(interactions)
 library(RColorBrewer)
-# library(metafor)
 library(meta)
-# library(forestplot)
 library(utf8)
+
+# DO NOT USE - it SUCKS library(metafor) 
+# DO NOT USE - it also SUCKS library(forestplot) 
 ```
 
 
 ```{r statistical analysis to compare giardia for pub}
 # Load up data
 rm(meta_data)
-meta_data <- read_excel("data/model_pred_2LRV_clo2.xlsx", skip = 2)
+meta_data <- read_excel("lm_results/model_pred_2LRV_clo2.xlsx", skip = 2)
 
 #Look at buschini only
 subset_data = filter(meta_data, paper_ID == "buschini_2004")  # Get Buschini
@@ -50,7 +50,7 @@ m.gen <- metamean(data = subset_data,
                  random = TRUE, 
                  method.tau = "REML")
 
-update.meta(m.gen, 
+update(m.gen, 
             subgroup = growth_phase_pub, 
             tau.common = FALSE, 
             method.tau = "REML",
@@ -79,16 +79,16 @@ m.gen <- metamean(data = meta_data,
                  random = TRUE, 
                  method.tau = "REML")
 
-m.gen.sub = update.meta(m.gen, 
+m.gen.sub = update(m.gen, 
                           subgroup = organism_name, 
                           tau.common = FALSE)
 
-png(file='ClO2forestplot.png', 
+png(file='meta_analysis_results/ClO2forestplot.png', 
     width = 11, 
     height = 3.4,
     units = "in", 
     res = 1200)
-forest.meta(m.gen.sub, 
+forest(m.gen.sub, 
             prediction = F, 
             leftcols = c("name_pub", "strain_name", "growth_phase_pub", "water_type_pub", "temp_C"), 
             leftlabs = c("Author (year)",
@@ -110,6 +110,7 @@ forest.meta(m.gen.sub,
             allstudies = T, 
             sortvar = TE, 
             col.square = "white",
+            col.square.lines = "white",
             col.inside = "black"
             )
 dev.off() 

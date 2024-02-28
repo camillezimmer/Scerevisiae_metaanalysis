@@ -11,11 +11,13 @@ knitr::opts_chunk$set(echo = TRUE)
 # Fresh clean up
 rm(list = ls())
 
+# Fresh clean up
+rm(list = ls())
+
 # Loading libraries
 library(readxl)
 library(MASS)
 library(modelr)
-# library(esquisse)
 library(forcats)
 library(patchwork)
 library(tidyverse)
@@ -23,17 +25,18 @@ library(broom)
 library(ggpubr)
 library(interactions)
 library(RColorBrewer)
-# library(metafor)
 library(meta)
-# library(forestplot)
 library(utf8)
+
+# DO NOT USE - it SUCKS library(metafor) 
+# DO NOT USE - it also SUCKS library(forestplot) 
 
 ```
 
 ```{r basic statistical analysis for pub}
 # Load in data
 rm(meta_data)
-meta_data <- read_excel("data/model_pred_2LRV_O3.xlsx", skip = 2)
+meta_data <- read_excel("lm_results/model_pred_2LRV_O3.xlsx", skip = 2)
 
 #do meta analysis
 m.gen <- metamean(data = meta_data,
@@ -48,7 +51,7 @@ m.gen <- metamean(data = meta_data,
                  method.tau = "REML")
 m.gen
 
-update.meta(m.gen,
+update(m.gen,
             subgroup = strain_type,
             tau.common = FALSE)
 m.gen
@@ -66,7 +69,7 @@ m.gen
 ```{r statistical analysis look at Dubeau, fig.width=13, fig.height=5}
 # Load in data
 rm(meta_data)
-meta_data <- read_excel("data/model_pred_2LRV_O3.xlsx", skip = 2)
+meta_data <- read_excel("lm_results/model_pred_2LRV_O3.xlsx", skip = 2)
 # Get one paper only
 # subset_data = filter(meta_data, paper_ID == "dubeau_1979")  # Get Dubeau
 subset_data = filter(meta_data, paper_ID != "USEPA_1991")   # Exclude USEPA
@@ -84,7 +87,7 @@ m.gen <- metamean(data = subset_data,
                  random = TRUE, 
                  method.tau = "REML")
 
-update.meta(m.gen, 
+update(m.gen, 
             subgroup = water_type, 
             tau.common = FALSE, 
             method.tau = "REML",
@@ -92,7 +95,7 @@ update.meta(m.gen,
 m.gen
 m.gen.reg = metareg(m.gen, ~water_type)
 m.gen.reg
-forest.meta(m.gen)
+forest(m.gen)
 
 ### Summary
 # 1) Again, high heterogenity among the yeast studies
@@ -106,7 +109,7 @@ forest.meta(m.gen)
 ```{r statistical analysis compare each study to USEPA, fig.width=13, fig.height=5}
 # Load in data
 rm(meta_data)
-meta_data <- read_excel("data/model_pred_2LRV_O3.xlsx", skip = 2)
+meta_data <- read_excel("lm_results/model_pred_2LRV_O3.xlsx", skip = 2)
 # Get one paper only
 subset_data = filter(meta_data, paper_ID != "watanabe_2010")  # Get Dubeau and USEPA
 # subset_data = filter(meta_data, paper_ID != "dubeau_1979")  # Get watanabe and USEPA
@@ -127,13 +130,13 @@ m.gen <- metamean(data = subset_data,
                  random = TRUE, 
                  method.tau = "REML")
 
-update.meta(m.gen, 
+update(m.gen, 
             subgroup = strain_type, 
             tau.common = FALSE, 
             method.tau = "REML",
             sm = "MRAW")
 m.gen
-forest.meta(m.gen)
+forest(m.gen)
 m.gen.reg = metareg(m.gen, ~strain_type)
 
 
@@ -159,15 +162,15 @@ m.gen <- metamean(data = meta_data,
                  random = TRUE, 
                  method.tau = "REML")
 
-m.gen.sub = update.meta(m.gen, 
+m.gen.sub = update(m.gen, 
                         subgroup = organism_name, 
                         tau.common = FALSE)
-png(file='O3forestplot.png', 
+png(file='meta_analysis_results/O3forestplot.png', 
     width = 11.5, 
     height = 4.25,
     units = "in", 
     res = 1200)
-forest.meta(m.gen.sub, 
+forest(m.gen.sub, 
             prediction = F, 
             leftcols = c("name_pub", "strain_name", "growth_phase_pub", "water_type_pub", "temp_C"), 
             leftlabs = c("Author (year)",
@@ -189,6 +192,7 @@ forest.meta(m.gen.sub,
             digits = 1, 
             allstudies = T, 
             col.square = "white",
+            col.square.lines = "white",
             col.inside = "black"
             )
 dev.off() 
