@@ -15,7 +15,6 @@ rm(list = ls())
 library(readxl)
 library(MASS)
 library(modelr)
-# library(esquisse)
 library(forcats)
 library(patchwork)
 library(tidyverse)
@@ -41,8 +40,8 @@ cl_raw[cols] <- lapply(cl_raw[cols], factor)
 #adding a LRV variable and removing survival of 0%
 #The reason why we exclude survival of 100% is because when a non-detect is reached in an experiment, 
 #we can't know the actual dose value that would have given the non-detect in the first place, it's an upper bound
-#the reasoning behind excluding survival of 0% is that our model will use the data points where a certain survival is acheived with a known dose
-#and the model will be able to predict what dose is needed to acheive 0% survival.
+#the reasoning behind excluding survival of 0% is that our model will use the data points where a certain survival is achieved with a known dose
+#and the model will be able to predict what dose is needed to achieve 0% survival.
 
 cl_raw <- cl_raw %>%
   filter(!(survival == 0)) %>% 
@@ -86,24 +85,21 @@ yeast95 = filter(yeast, paper_ID == "buschini_2004")
 yeast95 <- filter(yeast95, dose <= ceiling(quantile(yeast$dose, probs = 0.95)))
 
 #Initalize the outer df
-outer_df_buschini = data.frame()
+outer_df = data.frame()
 gr = levels(yeast95$growth_phase)
 
 #Initalize the growth_phase argument
 # growth_phase = "stationary"
 growth_phase = "log"
 
-#Subset data according to growth phase (stationary vs log)
-# tempdata = yeast95 %>% subset(growth_phase == growth_phase)
-
 for(i in seq_along(gr)){
   tempdata = yeast95 %>% subset(growth_phase ==gr[i])
   gr[i]
-tempmodel = lm(data = tempdata, 
-               formula = dose~LRV)
-#Do pred
-  
-predfluence = predict(tempmodel, data.frame(LRV = 2), interval = "confidence", se.fit=TRUE)
+  tempmodel_rev = lm(data = tempdata, 
+                 formula = dose~LRV)
+  #Do pred
+    
+  predfluence = predict(tempmodel_rev, data.frame(LRV = 2), interval = "confidence", se.fit=TRUE)
   
   #Get pred statistics
   pred_val = predfluence$fit[[1]]
@@ -115,18 +111,50 @@ predfluence = predict(tempmodel, data.frame(LRV = 2), interval = "confidence", s
   pred_resid = predfluence$residual.scale
   growth_phase = gr[i]
   
-#Organize into output
-output = c(growth_phase, pred_val, pred_l95, pred_u95, pred_stderr, pred_df, pred_n, pred_resid)
-output
+  # Get y intercept of reversed model (fluence when LRV = 0, b value)
+  pred_yint_b = predict(tempmodel_rev, data.frame(LRV = 0), interval = "confidence", se.fit = T)
+  pred_yint_b_val = pred_yint_b$fit[[1]]
+  pred_yint_b_l95 = pred_yint_b$fit[[2]]
+  pred_yint_b_u95 = pred_yint_b$fit[[3]]
   
-#Put into outer df
-outer_df_buschini = rbind(outer_df_buschini, output)
+  # get slope of model LRV~dose (not reversed model)
+  tempmodel = lm(data = tempdata, 
+                 formula = LRV~dose)
+  slope = (tidy(tempmodel))$estimate[2]
+  slope_l95 = (confint(tempmodel, "dose", level = 0.95))[1]
+  slope_u95 = (confint(tempmodel, "dose", level = 0.95))[2]
+  
+  # Check result of non-reversed model when dose = pred_val (i.e., dose for 2 LRV) - should be ~2 LRV! --> Yes, it's in the 95% CI
+  checkval_slope = (predict(tempmodel, data.frame(dose = pred_val), interval = "confidence", se.fit=TRUE))$fit[[1]]
+  checkval_slope_l95 = (predict(tempmodel, data.frame(dose = pred_val), interval = "confidence", se.fit=TRUE))$fit[[2]]
+  checkval_slope_u95 = (predict(tempmodel, data.frame(dose = pred_val), interval = "confidence", se.fit=TRUE))$fit[[3]]
+  # Check result of non-reversed model when dose = pred_yint_b (i.e., dose = b) - should be ~ 0 LRV --> Yes, we're good
+  checkval_b = (predict(tempmodel, data.frame(dose = pred_yint_b_val), interval = "confidence", se.fit = T))$fit[[1]]
+  checkval_b_l95 = (predict(tempmodel, data.frame(dose = pred_yint_b_val), interval = "confidence", se.fit = T))$fit[[2]]
+  checkval_b_u95 = (predict(tempmodel, data.frame(dose = pred_yint_b_val), interval = "confidence", se.fit = T))$fit[[3]]
+  
+  #Organize into output
+  output = c(growth_phase, pred_val, pred_l95, pred_u95, pred_stderr, pred_df, pred_n, pred_resid,
+             pred_yint_b_val, pred_yint_b_l95, pred_yint_b_u95,
+             slope, slope_l95, slope_u95,
+             checkval_slope, checkval_slope_l95, checkval_slope_u95,
+             checkval_b, checkval_b_l95, checkval_b_u95)
+  output
+    
+  #Put into outer df
+  outer_df = rbind(outer_df, output)
 
 }
 
-colnames(outer_df_buschini) = c('growth_phase', 'pred_val', 'pred_l95', 'pred_u95', 'pred_stderr', 'pred_df', 'pred_n', 'pred_resid')
 
-write.csv(outer_df_buschini, "outer_df_buschini_Cl.csv")
+colnames(outer_df) = c('growth_phase', 'pred_val', 'pred_l95', 'pred_u95', 'pred_stderr', 'pred_df', 'pred_n', 'pred_resid',
+                       'pred_yint_b', 'pred_yint_b_l95', 'pred_yint_b_u95',
+                       'slope', 'slope_l95', 'slope_u95',
+                       'checkval_slope', 'checkval_slope_l95', 'checkval_slope_u95',
+                       'checkval_b', 'checkval_b_l95', 'checkval_b_u95')
+# write.csv(outer_df, "outer_df.csv")
+outer_df
+write_xlsx(outer_df, "lm_results/outer_df_buschini_Cl.xlsx")
 
 ```
 
@@ -147,15 +175,15 @@ yeast95$pH = as.factor(yeast95$pH)
   print(tempsummary)
   
 ##### Do pred #####
-outer_df_hays = data.frame()
+outer_df = data.frame()
 gr = levels(yeast95$pH)
 
 for(i in seq_along(gr)){
   tempdata = yeast95 %>% subset(pH ==gr[i])
-tempmodel = lm(data = tempdata, 
-               formula = dose~LRV)
-  
-predfluence = predict(tempmodel, data.frame(LRV = 2), interval = "confidence", se.fit=TRUE)
+  tempmodel_rev = lm(data = tempdata, 
+                 formula = dose~LRV)
+    
+  predfluence = predict(tempmodel_rev, data.frame(LRV = 2), interval = "confidence", se.fit=TRUE)
   
   #Get pred statistics
   pred_val = predfluence$fit[[1]]
@@ -167,16 +195,46 @@ predfluence = predict(tempmodel, data.frame(LRV = 2), interval = "confidence", s
   pred_resid = predfluence$residual.scale
   pH = gr[i]
   
-#Organize into output
-output = c(pH, pred_val, pred_l95, pred_u95, pred_stderr, pred_df, pred_n, pred_resid)
-
-#Put into outer df
-outer_df_hays = rbind(outer_df_hays, output)
+  # Get y intercept of reversed model (fluence when LRV = 0, b value)
+  pred_yint_b = predict(tempmodel_rev, data.frame(LRV = 0), interval = "confidence", se.fit = T)
+  pred_yint_b_val = pred_yint_b$fit[[1]]
+  pred_yint_b_l95 = pred_yint_b$fit[[2]]
+  pred_yint_b_u95 = pred_yint_b$fit[[3]]
+  
+  # get slope of model LRV~dose (not reversed model)
+  tempmodel = lm(data = tempdata, 
+                 formula = LRV~dose)
+  slope = (tidy(tempmodel))$estimate[2]
+  slope_l95 = (confint(tempmodel, "dose", level = 0.95))[1]
+  slope_u95 = (confint(tempmodel, "dose", level = 0.95))[2]
+  
+  # Check result of non-reversed model when dose = pred_val (i.e., dose for 2 LRV) - should be ~2 LRV! --> Yes, it's in the 95% CI
+  checkval_slope = (predict(tempmodel, data.frame(dose = pred_val), interval = "confidence", se.fit=TRUE))$fit[[1]]
+  checkval_slope_l95 = (predict(tempmodel, data.frame(dose = pred_val), interval = "confidence", se.fit=TRUE))$fit[[2]]
+  checkval_slope_u95 = (predict(tempmodel, data.frame(dose = pred_val), interval = "confidence", se.fit=TRUE))$fit[[3]]
+  # Check result of non-reversed model when dose = pred_yint_b (i.e., dose = b) - should be ~ 0 LRV --> Yes, we're good
+  checkval_b = (predict(tempmodel, data.frame(dose = pred_yint_b_val), interval = "confidence", se.fit = T))$fit[[1]]
+  checkval_b_l95 = (predict(tempmodel, data.frame(dose = pred_yint_b_val), interval = "confidence", se.fit = T))$fit[[2]]
+  checkval_b_u95 = (predict(tempmodel, data.frame(dose = pred_yint_b_val), interval = "confidence", se.fit = T))$fit[[3]]
+  
+  #Organize into output
+  output = c(pH, pred_val, pred_l95, pred_u95, pred_stderr, pred_df, pred_n, pred_resid,
+             pred_yint_b_val, pred_yint_b_l95, pred_yint_b_u95,
+             slope, slope_l95, slope_u95,
+             checkval_slope, checkval_slope_l95, checkval_slope_u95,
+             checkval_b, checkval_b_l95, checkval_b_u95)
+  
+  #Put into outer df
+  outer_df = rbind(outer_df, output)
 
 }
 
-colnames(outer_df_hays) = c('pH', 'pred_val', 'pred_l95', 'pred_u95', 'pred_stderr', 'pred_df', 'pred_n', 'pred_resid')
-write.csv(outer_df_hays, "outer_df_hays_Cl.csv")
+colnames(outer_df) = c('pH', 'pred_val', 'pred_l95', 'pred_u95', 'pred_stderr', 'pred_df', 'pred_n', 'pred_resid',
+                       'pred_yint_b', 'pred_yint_b_l95', 'pred_yint_b_u95',
+                       'slope', 'slope_l95', 'slope_u95',
+                       'checkval_slope', 'checkval_slope_l95', 'checkval_slope_u95',
+                       'checkval_b', 'checkval_b_l95', 'checkval_b_u95')
+write_xlsx(outer_df, "outer_df_hays_Cl.xlsx")
 
 
 #####  Make a figure #####
@@ -187,10 +245,12 @@ p = ggplot(yeast95, aes(x = dose, y = LRV, colour = pH))+
   stat_regline_equation()
 print(p)
 
+
 ```
 
 
 ```{r look at giardia}
+  
 # Get Giardia data
 giardia <- filter(cl_raw, organism_name == 'giardia')
 # Make pH a factor
@@ -219,16 +279,16 @@ print(p)
 
   
 ##### Do pred #####
-outer_df_giardia_Cl = data.frame()
+outer_df = data.frame()
 gr = levels(giardia$pH)
 
 for(i in seq_along(gr)){
   tempdata = giardia %>% subset(pH ==gr[i])
-tempmodel = lm(data = tempdata, 
-               formula = dose~LRV)
-  
-predfluence = predict(tempmodel, data.frame(LRV = 2), interval = "confidence", se.fit=TRUE)
-  
+  tempmodel_rev = lm(data = tempdata, 
+                 formula = dose~LRV)
+    
+  predfluence = predict(tempmodel_rev, data.frame(LRV = 2), interval = "confidence", se.fit=TRUE)
+    
   #Get pred statistics
   pred_val = predfluence$fit[[1]]
   pred_l95 = predfluence$fit[[2]]
@@ -239,15 +299,45 @@ predfluence = predict(tempmodel, data.frame(LRV = 2), interval = "confidence", s
   pred_resid = predfluence$residual.scale
   pH = gr[i]
   
+  # Get y intercept of reversed model (fluence when LRV = 0, b value)
+  pred_yint_b = predict(tempmodel_rev, data.frame(LRV = 0), interval = "confidence", se.fit = T)
+  pred_yint_b_val = pred_yint_b$fit[[1]]
+  pred_yint_b_l95 = pred_yint_b$fit[[2]]
+  pred_yint_b_u95 = pred_yint_b$fit[[3]]
+  
+  # get slope of model LRV~dose (not reversed model)
+  tempmodel = lm(data = tempdata, 
+                 formula = LRV~dose)
+  slope = (tidy(tempmodel))$estimate[2]
+  slope_l95 = (confint(tempmodel, "dose", level = 0.95))[1]
+  slope_u95 = (confint(tempmodel, "dose", level = 0.95))[2]
+  
+  # Check result of non-reversed model when dose = pred_val (i.e., dose for 2 LRV) - should be ~2 LRV! --> Yes, it's in the 95% CI
+  checkval_slope = (predict(tempmodel, data.frame(dose = pred_val), interval = "confidence", se.fit=TRUE))$fit[[1]]
+  checkval_slope_l95 = (predict(tempmodel, data.frame(dose = pred_val), interval = "confidence", se.fit=TRUE))$fit[[2]]
+  checkval_slope_u95 = (predict(tempmodel, data.frame(dose = pred_val), interval = "confidence", se.fit=TRUE))$fit[[3]]
+  # Check result of non-reversed model when dose = pred_yint_b (i.e., dose = b) - should be ~ 0 LRV --> Yes, we're good
+  checkval_b = (predict(tempmodel, data.frame(dose = pred_yint_b_val), interval = "confidence", se.fit = T))$fit[[1]]
+  checkval_b_l95 = (predict(tempmodel, data.frame(dose = pred_yint_b_val), interval = "confidence", se.fit = T))$fit[[2]]
+  checkval_b_u95 = (predict(tempmodel, data.frame(dose = pred_yint_b_val), interval = "confidence", se.fit = T))$fit[[3]]
+  
 #Organize into output
-output = c(pH, pred_val, pred_l95, pred_u95, pred_stderr, pred_df, pred_n, pred_resid)
+output = c(pH, pred_val, pred_l95, pred_u95, pred_stderr, pred_df, pred_n, pred_resid, 
+           pred_yint_b_val, pred_yint_b_l95, pred_yint_b_u95,
+           slope, slope_l95, slope_u95,
+           checkval_slope, checkval_slope_l95, checkval_slope_u95,
+           checkval_b, checkval_b_l95, checkval_b_u95)
 
 #Put into outer df
-outer_df_giardia_Cl = rbind(outer_df_giardia_Cl, output)
+outer_df = rbind(outer_df, output)
 
 }
 
-colnames(outer_df_giardia_Cl) = c('pH', 'pred_val', 'pred_l95', 'pred_u95', 'pred_stderr', 'pred_df', 'pred_n', 'pred_resid')
-write.csv(outer_df_giardia_Cl, "outer_df_giardia_Cl.csv")
+colnames(outer_df) = c('pH', 'pred_val', 'pred_l95', 'pred_u95', 'pred_stderr', 'pred_df', 'pred_n', 'pred_resid',
+                       'pred_yint_b', 'pred_yint_b_l95', 'pred_yint_b_u95',
+                       'slope', 'slope_l95', 'slope_u95',
+                       'checkval_slope', 'checkval_slope_l95', 'checkval_slope_u95',
+                       'checkval_b', 'checkval_b_l95', 'checkval_b_u95')
+write_xlsx(outer_df, "lm_results/outer_df_giardia_Cl.xlsx")
 
 ```

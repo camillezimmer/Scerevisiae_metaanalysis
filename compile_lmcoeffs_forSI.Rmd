@@ -1,0 +1,83 @@
+---
+title: "Supplementary Information Table S6"
+subtitle: "Linear model parameters"
+author: "Camille Zimmer"
+date: "2024-01-30"
+output:
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Fresh clean up
+rm(list = ls())
+
+# Loading libraries
+library(tidyverse)
+library(readxl)
+library(writexl)
+library(gt)
+
+# Read in data
+lmdata= read_excel("lm_results/compile_lm_params_SImaterial.xlsx", skip = 2)
+
+```
+
+
+
+```{r data wrangling, include=FALSE}
+
+# Paste new columns together that read like: number (95% CI for number)
+str(lmdata)
+lmdata = lmdata %>%
+  mutate_at(c("pred_val", "pred_l95", "pred_u95"), round, 2) %>% # Round the pred_val info to make it easier to look at
+  mutate_at(c("pred_yint_b", "pred_yint_b_l95", "pred_yint_b_u95"), round, 3) %>% # More rounding
+  mutate_at(c("slope", "slope_l95", "slope_u95"), round, 5)
+
+```
+
+
+
+```{r gt table, echo=F}
+
+lmdata %>%
+  group_by(disinfection_type, organism_name) %>%
+  select(c(disinfection_type, 
+           rownames_forpub, 
+           organism_name, strain_name_gt, 
+           growth_phase_pub, 
+           water_type_pub, temp_C,
+           pred_n,
+           pred_val, pred_l95, pred_u95,
+           pred_yint_b, pred_yint_b_l95, pred_yint_b_u95, 
+           slope, slope_l95, slope_u95)) %>%
+  gt() %>%
+  cols_merge(
+    columns = c(pred_val, pred_l95, pred_u95),
+    pattern = "{1} <<({2}; {3})>>"
+  ) %>%
+  cols_merge(
+    columns = c(pred_yint_b, pred_yint_b_l95, pred_yint_b_u95),
+    pattern = "{1} <<({2}; {3})>>"
+  ) %>%
+  cols_merge(
+    columns = c(slope, slope_l95, slope_u95),
+    pattern = "{1} <<({2}; {3})>>"
+  ) %>%
+  cols_label(
+    rownames_forpub = "Author (year)",
+    strain_name_gt = "Strain name",
+    growth_phase_pub = "Growth phase",
+    water_type_pub = "Water type (pH)",
+    temp_C = "Temperature, Celsius",
+    pred_n = "Number of data points",
+    pred_val = "Disinfectant dose for 2 LRV, in J/m2 or mg*min/L as appropriate (95% CI)",
+    pred_yint_b = "Lag coefficient, b,  in J/m2 or mg*min/L as appropriate (95% CI)",
+    slope = "Chick-Watson inactivation rate constant, kD, in m2/J or L/mg/min as appropriate (95% CI)"
+  ) %>%
+  cols_align(align = "left") %>%
+  # gtsave("lm_results/lmdata.html")
+  # gtsave("lm_results/lmdata.pdf")
+    gtsave("lm_results/lmdata.docx")
+```

@@ -15,7 +15,6 @@ rm(list = ls())
 library(readxl)
 library(MASS)
 library(modelr)
-# library(esquisse)
 library(forcats)
 library(patchwork)
 library(tidyverse)
@@ -23,17 +22,18 @@ library(broom)
 library(ggpubr)
 library(interactions)
 library(RColorBrewer)
-# library(metafor)
 library(meta)
-# library(forestplot)
 library(utf8)
+
+# DO NOT USE - it SUCKS library(metafor) 
+# DO NOT USE - it also SUCKS library(forestplot) 
 
 ```
 
 ```{r 1st pass statistical analysis to compare with giardia}
 # Load in data
 rm(meta_data)
-meta_data <- read_excel("data/model_pred_2LRV_cl.xlsx", skip = 2)
+meta_data <- read_excel("lm_results/model_pred_2LRV_cl.xlsx", skip = 2)
 
 m.gen <- metamean(data = meta_data,
                  n = pred_n,
@@ -48,7 +48,7 @@ m.gen <- metamean(data = meta_data,
                  method.tau = "REML")
 m.gen
 
-m.gen.sub = update.meta(m.gen,
+m.gen.sub = update(m.gen,
                         subgroup = paper_ID, 
                         tau.common = FALSE)
 m.gen.sub
@@ -68,7 +68,7 @@ m.gen.reg
 ```{r finer statistical analysis to look at papers, fig.width=10, fig.height=5}
 # Load in data
 rm(meta_data)
-meta_data <- read_excel("data/model_pred_2LRV_cl.xlsx", skip = 2)
+meta_data <- read_excel("lm_results/model_pred_2LRV_cl.xlsx", skip = 2)
 # Get one paper only
 # subset_data = filter(meta_data, paper_ID == "buschini_2004")  # Get Buschini
 subset_data = filter(meta_data, paper_ID == "hays_1967")  # Get Hays
@@ -87,14 +87,14 @@ m.gen <- metamean(data = subset_data,
 summary(m.gen)
 
 # Look at impact of growth phase, the only thing that differs between the two effect sizes
-update.meta(m.gen,
+update(m.gen,
             subgroup = pH,
             tau.common = F,
             method.tau = "REML",
             sm = "MRAW")
 summary(m.gen)
 
-forest.meta(m.gen)
+forest(m.gen)
 
 # #Not enough data points for meta regression
 
@@ -108,7 +108,7 @@ forest.meta(m.gen)
 ```{r fig for pub}
 # Load in data
 rm(meta_data)
-meta_data <- read_excel("data/model_pred_2LRV_cl.xlsx", skip = 2)
+meta_data <- read_excel("lm_results/model_pred_2LRV_cl.xlsx", skip = 2)
 
 # Make fig
 m.gen <- metamean(data = meta_data,
@@ -121,15 +121,15 @@ m.gen <- metamean(data = meta_data,
                  common = FALSE,
                  random = TRUE, 
                  method.tau = "REML")
-m.gen.sub = update.meta(m.gen,
+m.gen.sub = update(m.gen,
                         subgroup = organism_name, 
                         tau.common = FALSE)
-png(file='Clforestplot.png', 
+png(file='meta_analysis_results/Clforestplot.png', 
     width = 11, 
     height = 3.90,
     units = "in", 
     res = 1200)
-forest.meta(m.gen.sub, 
+forest(m.gen.sub, 
             prediction = F, 
             leftcols = c("name_pub", "strain_name", "growth_phase_pub", "water_type_pub", "temp_C"), 
             # leftlabs = c("Author (year)", "Strain name", "Growth phase", "Water type (pH)", "Temperature, Celsius"), 
@@ -151,6 +151,7 @@ forest.meta(m.gen.sub,
             sortvar = TE,
             common = F, 
             col.square = "white",
+            col.square.lines = "white",
             col.inside = "black"
             )
 dev.off() 

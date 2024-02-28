@@ -23,7 +23,13 @@ library(ggpubr)
 library(interactions)
 library(RColorBrewer)
 library(utf8)
-library(meta) # For metamean, etc for statistical analysis # https://cran.r-project.org/web/packages/meta/meta.pdf
+library(meta) # For metamean, etc for statistical analysis
+# library(metafor) # for escalc, for old forest() plots, which SUCK
+# library(forestplot) # for forestplot() funcction, which also sucked
+
+# Load in data
+rm(meta_data)
+meta_data <- read_excel("lm_results/model_pred_2LRV_UV.xlsx", skip = 2)
 
 ```
 
@@ -31,7 +37,7 @@ library(meta) # For metamean, etc for statistical analysis # https://cran.r-proj
 ```{r subgroups statistical analysis for overall yeast vs crypto & giardia}
 # Load in data
 rm(meta_data)
-meta_data <- read_excel("data/model_pred_2LRV_UV.xlsx", skip = 2)
+meta_data <- read_excel("lm_results/model_pred_2LRV_UV.xlsx", skip = 2)
 
 # Filter Qian out because they use v high fluences
 meta_data = filter(meta_data, paper_ID != "qian_2004")
@@ -57,8 +63,8 @@ m.gen <- metamean(
                  method.tau = "REML")
                   # , hakn = TRUE)
 
-update.meta(m.gen, 
-            subgroup = organism_name, 
+update(m.gen, 
+            subgroup = organism_name,
             tau.common = FALSE)
 m.gen.reg = metareg(m.gen, ~organism_name)
 m.gen.reg
@@ -76,19 +82,18 @@ m.gen <- metamean(
                  random = TRUE, 
                  method.tau = "REML")
                   # , hakn = TRUE)
-update.meta(m.gen, 
+update(m.gen, 
             subgroup = organism_name, 
             tau.common = FALSE)
 m.gen.reg = metareg(m.gen, ~organism_name)
 m.gen.reg
-
 ```
 
 
 ```{r subgroups statistical analysis for strain type and log vs stat phase}
 # Load in data
 rm(meta_data)
-meta_data <- read_excel("data/model_pred_2LRV_UV.xlsx", skip = 2)
+meta_data <- read_excel("lm_results/model_pred_2LRV_UV.xlsx", skip = 2)
 
 # Filter Bisquert out because it screws everything up
 meta_data = filter(meta_data, paper_ID != "bisquert_2018")
@@ -113,7 +118,7 @@ m.gen <- metamean(
 summary(m.gen)
 
 ##### Yeast strains #####
-update.meta(m.gen, 
+update(m.gen, 
             subgroup = strain_category, 
             tau.common = FALSE, 
             method.tau = "REML",
@@ -123,7 +128,7 @@ m.gen.reg
 
 
 ##### Logarithmic vs stationary #####
-update.meta(m.gen, 
+update(m.gen, 
             subgroup = growth_phase, 
             tau.common = FALSE, 
             method.tau = "REML",
@@ -134,11 +139,11 @@ m.gen.reg
 ```
 
 
-```{r statistical analysis to compare different strains of Sommer 1996, fig.width=10, fig.height5}
+```{r statistical analysis to compare different strains of Sommer 1996, fig.width=15, fig.height5}
 
 # Load in data
 rm(meta_data)
-meta_data <- read_excel("data/model_pred_2LRV_UV.xlsx", skip = 2)
+meta_data <- read_excel("lm_results/model_pred_2LRV_UV.xlsx", skip = 2)
 
 # Get sommer only
 sommer_data = filter(meta_data, paper_ID == "sommer_1996")
@@ -160,14 +165,14 @@ m.gen <- metamean(
                 prediction = TRUE)
 summary(m.gen)
 
-update.meta(m.gen,
+update(m.gen,
             subgroup = subset_no,
             tau.common = F,
             method.tau = "REML",
             sm = "MRAW")
 summary(m.gen)
 
-forest.meta(m.gen)
+forest(m.gen)
 
 
 m.gen.reg = metareg(m.gen, ~subset_no)
@@ -184,10 +189,10 @@ m.gen.reg
 
 ```
 
-```{r statistical analysis to compare different wild-type strains log vs stationary, fig.width=10, fig.height5}
+```{r statistical analysis to compare different wild-type strains log vs stationary, fig.width=15, fig.height5}
 # Load in data
 rm(meta_data)
-meta_data <- read_excel("data/model_pred_2LRV_UV.xlsx", skip = 2)
+meta_data <- read_excel("lm_results/model_pred_2LRV_UV.xlsx", skip = 2)
 # Get wild-type strains only
 wt_data = filter(meta_data, strain_category == "wt")
 
@@ -207,14 +212,14 @@ m.gen <- metamean(
                 prediction = TRUE)
 summary(m.gen)
 
-update.meta(m.gen,
+update(m.gen,
             subgroup = growth_phase,
             tau.common = F,
             method.tau = "REML",
             sm = "MRAW")
 summary(m.gen)
 
-forest.meta(m.gen)
+forest(m.gen)
 
 
 m.gen.reg = metareg(m.gen, ~growth_phase)
@@ -228,10 +233,10 @@ m.gen.reg
 
 ```
 
-```{r statistical analysis to compare different baker's yeast estimates log vs stationary phase, fig.width=10, fig.height = 5}
+```{r statistical analysis to compare different baker's yeast estimates log vs stationary phase, fig.width=20, fig.height = 5}
 # Load in data
 rm(meta_data)
-meta_data <- read_excel("data/model_pred_2LRV_UV.xlsx", skip = 2)
+meta_data <- read_excel("lm_results/model_pred_2LRV_UV.xlsx", skip = 2)
 # Get wild-type strains only
 bakers_data = filter(meta_data, strain_category == "wt-bakers")
 
@@ -253,14 +258,14 @@ summary(m.gen)
 m.gen.reg = metareg(m.gen, ~growth_phase)
 m.gen.reg
 
-update.meta(m.gen,
+update(m.gen,
             subgroup = growth_phase,
             tau.common = F,
             method.tau = "REML",
             sm = "MRAW")
 summary(m.gen)
 
-forest.meta(m.gen)
+forest(m.gen)
 
 ### Summary: 
 # 1)  Using all 3 estimates, they're statistically different (I2 = 98.8%, p < 0.0001)
@@ -269,11 +274,11 @@ forest.meta(m.gen)
 
 ```
 
-```{r statistical analysis to compare different growth phase estimates from Moustacchi, fig.width=10, fig.height5}
+```{r statistical analysis to compare different growth phase estimates from Moustacchi, fig.width=15, fig.height5}
 
 # Load in data
 rm(meta_data)
-meta_data <- read_excel("data/model_pred_2LRV_UV.xlsx", skip = 2)
+meta_data <- read_excel("lm_results/model_pred_2LRV_UV.xlsx", skip = 2)
 # Get wild-type strains only
 subset_data = filter(meta_data, paper_ID == "moustacchi_1970")
 
@@ -301,10 +306,10 @@ summary(m.gen)
 ```
 
 
-```{r statistical analysis to compare different growth phase estimates of the RAD 197/2d strain, fig.width=10, fig.height = 5}
+```{r statistical analysis to compare different growth phase estimates of the RAD 197/2d strain, fig.width=15, fig.height = 5}
 # Load in data
 rm(meta_data)
-meta_data <- read_excel("data/model_pred_2LRV_UV.xlsx", skip = 2)
+meta_data <- read_excel("lm_results/model_pred_2LRV_UV.xlsx", skip = 2)
 # Get wild-type strains only
 subset_data = filter(meta_data, paper_ID == "waters_1973" | paper_ID == "zuk_1975" | paper_ID == "zuk_1978" | paper_ID == "swietlinska_1976")
 # General meta analysis of all studies w/o subgroups
@@ -323,14 +328,14 @@ m.gen <- metamean(
                 prediction = TRUE)
 summary(m.gen)
 
-update.meta(m.gen,
+update(m.gen,
             subgroup = growth_phase,
             tau.common = F,
             method.tau = "REML",
             sm = "MRAW")
 summary(m.gen)
 
-forest.meta(m.gen)
+forest(m.gen)
 
 m.gen.reg = metareg(m.gen, ~growth_phase)
 m.gen.reg
@@ -346,7 +351,7 @@ m.gen.reg
 
 # Load in data
 rm(meta_data)
-meta_data <- read_excel("data/model_pred_2LRV_UV.xlsx", skip = 2)
+meta_data <- read_excel("lm_results/model_pred_2LRV_UV.xlsx", skip = 2)
 # Filter Bisquert out because it fucks everything up
 meta_data = filter(meta_data, paper_ID != "bisquert_2018")
 #Filter Qiann & USEPA with Giardia
@@ -371,13 +376,13 @@ summary(m.gen)
 
 ##### Funnel plot #####
 # funnel.meta(m.gen, studlab = TRUE)
-png(file='UVfunnelplot.png', 
+png(file='meta_analysis_results/UVfunnelplot.png', 
     width = 7, 
     height = 5,
     units = "in", 
     res = 1200)
 col.contour = c("gray75", "gray85", "gray95")
-funnel.meta(m.gen, studlab = F, 
+funnel(m.gen, studlab = F, 
             contour = c(0.9, 0.95, 0.99),
             col.contour = col.contour, 
             xlab = paste("UV dose for 2 LRV, ",  "J/m", '\u00B2', sep = ""))
@@ -392,7 +397,7 @@ dev.off()
 
 # Load in data
 rm(meta_data)
-meta_data <- read_excel("data/model_pred_2LRV_UV.xlsx", skip = 2)
+meta_data <- read_excel("lm_results/model_pred_2LRV_UV.xlsx", skip = 2)
 
 #Filter Qiann 
 meta_data = filter(meta_data, paper_ID != "qian_2004")
@@ -420,12 +425,12 @@ summary(m.gen)
 m.gen.sub = update(m.gen, subgroup = strain_category_pub)
 
 # Graph it
-png(file='UVforestplot.png', 
+png(file='meta_analysis_results/UVforestplot.png', 
     width = 11, 
     height = 8,
     units = "in", 
     res = 1200)
-forest.meta(m.gen.sub, 
+forest(m.gen.sub, 
             prediction = F, 
             leftcols = c("rownames_forpub", "strain_name", "growth_phase_pub", "water_type_pub"), 
             # leftlabs = c("Author (year)", "Strain name", "Growth phase", "Water type (pH)"), 
@@ -454,7 +459,7 @@ dev.off()
 
 # Load in data
 rm(meta_data)
-meta_data <- read_excel("data/model_pred_2LRV_UV_graph_abstract.xlsx", skip = 2)
+meta_data <- read_excel("lm_results/model_pred_2LRV_UV_graph_abstract.xlsx", skip = 2)
 
 #Filter Qiann 
 meta_data = filter(meta_data, paper_ID != "qian_2004")
@@ -482,13 +487,13 @@ summary(m.gen)
 m.gen.sub = update(m.gen, subgroup = strain_category_pub)
 
 # Graph it
-png(file='UVforestplot_graphabstract.png',
+png(file='meta_analysis_results/UVforestplot_graphabstract.png',
     width = 8.5,
     height = 8.5,
     units = "in",
     res = 1200)
 
-forest.meta(m.gen.sub, 
+forest(m.gen.sub, 
             # subgroup = c("Baker's yeast"),
             prediction = F, 
             leftcols = c("rownames_forpub"), 
